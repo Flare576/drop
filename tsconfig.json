@@ -17,6 +17,6 @@
     "noImplicitReturns": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["cli/**/*", "shared/**/*"],
-  "exclude": ["node_modules", "web/**/*", "api/**/*"]
+  "include": ["cli/**/*", "shared/**/*", "tests/bun/**/*", "playwright.config.ts", "web/**/*.d.ts"],
+  "exclude": ["node_modules", "web/**/*.js", "web/**/*.html", "web/**/*.css", "api/**/*", "tests/browser/**/*"]
 }

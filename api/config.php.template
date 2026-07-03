@@ -20,6 +20,15 @@ define('DB_PASSWORD', '{{DB_PASSWORD}}');
 // Storage root for sharded ciphertext blob files. Must be writable by the web server user.
 define('DATA_PATH', '{{DATA_PATH}}');
 
+// Optional unix socket path for the DB connection (see getConnection() below).
+// scripts/render-config.php drops this ENTIRE line when the DB_SOCKET env var is
+// unset, so the constant is genuinely undefined -- getConnection()'s existing
+// `defined('DB_SOCKET') ? DB_SOCKET : ''` check already treats that as "fall back to
+// TCP" (Beta QA finding M3 -- this branch was documented since the file was first
+// written but had no way to ever actually receive a value through the real
+// render/deploy path until now).
+define('DB_SOCKET', '{{DB_SOCKET}}');
+
 // Team-gate codes ("who's allowed to push at all") now live in the allowed_auth DB
 // table, not a static config secret -- see isAuthCodeValid() below and schema.sql.
 
@@ -77,8 +86,18 @@ function getFilePath(string $userId, string $artifactId): string
     $shard = substr($userId, 0, 2);
     $dir = DATA_PATH . '/' . $shard . '/' . $userId;
 
-    if (!is_dir($dir)) {
-        mkdir($dir, 0755, true);
+    // Classic TOCTOU: two concurrent POSTs for the SAME userId can both pass this
+    // is_dir() check before either one finishes creating the directory, so the
+    // second mkdir() call fails with "File exists" -- which this app's global error
+    // handler promotes to a fatal 500 (found via the I5 concurrency test/fix, which
+    // was the first time this code path ever ran under real multi-worker concurrency;
+    // this bug is independent of and predates that fix). @-suppress the specific,
+    // expected "already exists" race and re-check is_dir() afterward rather than
+    // trusting mkdir()'s return value alone -- a mkdir() failing for a REAL reason
+    // (permissions, disk full, invalid path) must still surface as a real error, not
+    // be swallowed alongside the benign race.
+    if (!is_dir($dir) && !@mkdir($dir, 0755, true) && !is_dir($dir)) {
+        throw new RuntimeException("Failed to create storage directory: {$dir}");
     }
 
     return $dir . '/' . $artifactId . '.json';

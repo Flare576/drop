@@ -30,12 +30,19 @@
   ],
   "license": "MIT",
   "devDependencies": {
+    "@playwright/test": "^1.61.1",
     "@types/bun": "^1.3.14",
     "typescript": "^6.0.3"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "npm run typecheck"
+    "test": "npm run typecheck && npm run test:bun",
+    "test:bun": "bun test tests/bun",
+    "test:unit": "bun test tests/bun/unit",
+    "test:cli": "bun test tests/bun/cli",
+    "test:api": "bun test tests/bun/api",
+    "test:browser": "playwright test tests/browser",
+    "test:all": "npm run test && npm run test:browser"
   },
   "type": "module"
 }

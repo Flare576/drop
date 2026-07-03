@@ -161,6 +161,14 @@ function requireCredentials(config: ResolvedConfig): CryptoCredentials & { dropA
  * the copy for the add+diff steps, and discards the copy — the real .git/index is
  * never opened for writing. Verified byte-identical via `shasum .git/index`
  * before/after against a repo with staged+unstaged+untracked changes simultaneously.
+ *
+ * A freshly initialized repo (no commits yet) has no HEAD, so `git diff HEAD` fails
+ * with exit 128 ("ambiguous argument 'HEAD'") before ever reading the working tree —
+ * this is the exact moment someone is most likely to use the tool for the first time
+ * (Beta QA finding I6). Detected via `git rev-parse --verify HEAD` and, when absent,
+ * diffed against `4b825dc642cb6eb9a060e54bf8d69288fbee4904` — git's well-known SHA-1
+ * hash of the empty tree, valid in every git repo without needing a real commit to
+ * exist, giving the same "everything is new" diff a first commit would produce.
  */
 async function captureDiff(repoRoot: string): Promise<string> {
   const realIndexPath = (await Bun.$`git rev-parse --git-path index`.cwd(repoRoot).quiet().text()).trim();
@@ -176,8 +184,12 @@ async function captureDiff(repoRoot: string): Promise<string> {
   const env = { ...process.env, GIT_INDEX_FILE: scratchIndexPath };
 
   try {
+    const hasHead = (await Bun.$`git rev-parse --verify -q HEAD`.cwd(repoRoot).env(env).quiet().nothrow())
+      .exitCode === 0;
+    const diffTarget = hasHead ? "HEAD" : "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+
     await Bun.$`git add -A -N .`.cwd(repoRoot).env(env).quiet();
-    const diff = await Bun.$`git diff HEAD --binary -M`.cwd(repoRoot).env(env).quiet().text();
+    const diff = await Bun.$`git diff ${diffTarget} --binary -M`.cwd(repoRoot).env(env).quiet().text();
     return diff;
   } finally {
     await Bun.$`rm -f ${scratchIndexPath}`.quiet().nothrow();

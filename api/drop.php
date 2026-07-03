@@ -90,13 +90,94 @@ function sweepExpiredGlobally(PDO $pdo): void
 }
 
 /**
- * Checks the rolling request-timestamp window for a userId against RATE_LIMIT_MAX,
- * without recording the current request. Returns the still-live timestamps so the caller
- * can append to them (via recordRateLimitRequest) only once the request is fully accepted.
+ * Atomically checks the rolling request-timestamp window for a userId against
+ * RATE_LIMIT_MAX and, if allowed, appends "now" and persists it -- all inside one
+ * transaction holding a row lock (`SELECT ... FOR UPDATE`) for the userId's rate-limit
+ * row, so two concurrent POSTs for the same userId can never both read the same
+ * pre-burst window and both be admitted (Beta QA finding I5: the prior split
+ * check-then-write, as two separate unlocked statements, let exactly that race
+ * silently drop one request's rate-limit accounting under concurrency). Different
+ * userIds never contend for the same row, so this only serializes concurrent requests
+ * to the SAME mailbox -- the exact scope of what needed fixing.
+ *
+ * `INSERT IGNORE` first guarantees a row exists (idempotent -- a duplicate is silently
+ * ignored) so the subsequent `SELECT ... FOR UPDATE` always has a real row to lock;
+ * MySQL's locking semantics for "lock a row that doesn't exist yet" (gap locks) are
+ * murkier than "lock a row that exists," so this sidesteps that entirely.
+ *
+ * Reserves the slot BEFORE the caller does file I/O or the drop_items insert, not
+ * after -- holding this row lock across a disk write would serialize concurrent
+ * pushes to the same mailbox for the duration of that write, which is unnecessary
+ * contention for what the lock needs to protect. The tradeoff: a request that reserves
+ * a slot but then fails downstream (bad request body reaches here already rejected by
+ * the caller before this runs; a file-write failure after this succeeds) still spends
+ * one slot from the window. That's an accepted, rare-failure-path cost -- it cannot
+ * silently under-count concurrent successful requests, which was the actual bug.
+ *
+ * Retries on InnoDB deadlock (SQLSTATE 40001): `INSERT IGNORE` immediately followed by
+ * `SELECT ... FOR UPDATE` against a row that may not exist yet is a well-documented
+ * InnoDB deadlock pattern under concurrent load -- verified directly (20 truly
+ * concurrent PHP processes hitting one fresh userId reproduced
+ * "SQLSTATE[40001]: Serialization failure: 1213 Deadlock found" repeatably). MySQL's
+ * own recommendation for this exact pattern is bounded client-side retry, not avoiding
+ * the pattern; InnoDB resolves the deadlock itself by rolling back one of the
+ * contending transactions, so a retry is guaranteed to make progress, not spin
+ * forever.
  */
-function checkRateLimit(PDO $pdo, string $userId): array
+function reserveRateLimitSlot(PDO $pdo, string $userId): array
 {
-    $stmt = $pdo->prepare('SELECT requests FROM drop_rate_limits WHERE user_id = ?');
+    $maxAttempts = 10;
+
+    for ($attempt = 1; $attempt <= $maxAttempts; $attempt++) {
+        try {
+            return reserveRateLimitSlotOnce($pdo, $userId);
+        } catch (PDOException $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+
+            $isDeadlock = $e->getCode() === '40001' || str_contains($e->getMessage(), 'Deadlock found');
+            if (!$isDeadlock || $attempt === $maxAttempts) {
+                throw $e;
+            }
+
+            // Small jittered backoff before retrying. An earlier version of this
+            // comment claimed no backoff was needed since InnoDB already rolled back
+            // the losing transaction by the time the exception surfaces -- that's true
+            // for a single collision, but empirically wrong under heavy same-row
+            // contention: many transactions retrying in lockstep immediately just
+            // re-collide with each other, exhausting the retry budget under an
+            // artificially extreme test (40 truly concurrent requests to one userId --
+            // worse than any real usage, which is at most one CLI push or one abused
+            // shared auth code, never 40 simultaneous requests to the same mailbox).
+            // Random jitter (1-5ms scaled by attempt) spreads retries apart so they
+            // stop re-colliding with each other on every round.
+            usleep(random_int(1_000, 5_000) * $attempt);
+        }
+    }
+
+    // Unreachable: the loop above always either returns or throws.
+    throw new RuntimeException('reserveRateLimitSlot: exhausted retry attempts without returning or throwing');
+}
+
+/** One attempt at the check-and-reserve transaction. May throw PDOException on deadlock. */
+function reserveRateLimitSlotOnce(PDO $pdo, string $userId): array
+{
+    // READ COMMITTED for just this one transaction (must be set before it starts;
+    // scoped to the next transaction only, not the connection). MySQL's own
+    // documented guidance for the exact `INSERT` + `SELECT ... FOR UPDATE` pattern
+    // below: under the default REPEATABLE READ, InnoDB additionally takes gap locks
+    // on the index range, which is what was producing the deadlocks under heavy
+    // same-row contention even with retries. READ COMMITTED uses plain record locks
+    // instead -- since every lookup here is an equality match on user_id (a unique
+    // key), a record lock is all the correctness this function actually needs.
+    $pdo->exec('SET TRANSACTION ISOLATION LEVEL READ COMMITTED');
+    $pdo->beginTransaction();
+
+    $pdo->prepare('INSERT IGNORE INTO drop_rate_limits (user_id, requests) VALUES (?, ?)')
+        ->execute([$userId, json_encode([])]);
+
+    $stmt = $pdo->prepare('SELECT requests FROM drop_rate_limits WHERE user_id = ? FOR UPDATE');
     $stmt->execute([$userId]);
     $row = $stmt->fetch();
 
@@ -113,24 +194,22 @@ function checkRateLimit(PDO $pdo, string $userId): array
         $oldestInWindow = min($timestamps);
         $retryAfter = max(1, ($oldestInWindow + RATE_LIMIT_WINDOW) - time());
 
-        return ['allowed' => false, 'retry_after' => $retryAfter, 'timestamps' => $timestamps];
+        // Still persist the pruned (expired-entries-removed) window even on rejection,
+        // so the row doesn't grow unbounded with stale timestamps across repeated
+        // rejected retries.
+        $pdo->prepare('UPDATE drop_rate_limits SET requests = ? WHERE user_id = ?')
+            ->execute([json_encode($timestamps), $userId]);
+        $pdo->commit();
+
+        return ['allowed' => false, 'retry_after' => $retryAfter];
     }
 
-    return ['allowed' => true, 'retry_after' => null, 'timestamps' => $timestamps];
-}
-
-/** Appends "now" to the given timestamp window and persists it for this userId. */
-function recordRateLimitRequest(PDO $pdo, string $userId, array $timestamps): void
-{
     $timestamps[] = time();
-    $json = json_encode(array_values($timestamps));
+    $pdo->prepare('UPDATE drop_rate_limits SET requests = ? WHERE user_id = ?')
+        ->execute([json_encode(array_values($timestamps)), $userId]);
+    $pdo->commit();
 
-    $stmt = $pdo->prepare('
-        INSERT INTO drop_rate_limits (user_id, requests, updated_at)
-        VALUES (?, ?, NOW())
-        ON DUPLICATE KEY UPDATE requests = VALUES(requests), updated_at = NOW()
-    ');
-    $stmt->execute([$userId, $json]);
+    return ['allowed' => true, 'retry_after' => null];
 }
 
 // ---------------------------------------------------------------------------------------
@@ -155,7 +234,7 @@ function handlePost(string $userId): void
         return;
     }
 
-    $rateCheck = checkRateLimit($pdo, $userId);
+    $rateCheck = reserveRateLimitSlot($pdo, $userId);
     if (!$rateCheck['allowed']) {
         http_response_code(429);
         header('Retry-After: ' . $rateCheck['retry_after']);
@@ -184,7 +263,13 @@ function handlePost(string $userId): void
     $artifactId = generateArtifactId();
     $createdAtTs = time();
     $expiresAtTs = $createdAtTs + (TTL_HOURS * 3600);
-    $sizeBytes = strlen($data['ciphertext']);
+    // Decoded byte length of the ciphertext, not the base64 string's own length -- the
+    // API contract (api/README.md) promises "ciphertext byte length"; base64 inflates
+    // by ~33%, so strlen() of the encoded string was reporting an inflated, dishonest
+    // size (Beta QA finding M2). Non-strict decode: this server never validates
+    // ciphertext as anything but an opaque string, so a malformed value degrades to a
+    // best-effort byte count rather than rejecting an otherwise-valid POST.
+    $sizeBytes = strlen(base64_decode($data['ciphertext'], false));
 
     $fullPath = getFilePath($userId, $artifactId); // also creates the shard dir
     $relativePath = getRelativeFilePath($userId, $artifactId);
@@ -202,8 +287,6 @@ function handlePost(string $userId): void
         VALUES (?, ?, ?, FROM_UNIXTIME(?), FROM_UNIXTIME(?), ?)
     ');
     $stmt->execute([$userId, $artifactId, $relativePath, $createdAtTs, $expiresAtTs, $sizeBytes]);
-
-    recordRateLimitRequest($pdo, $userId, $rateCheck['timestamps']);
 
     // Probabilistic global expiry sweep — this host has no reliable cron, so expiry must
     // self-heal from ordinary traffic. random_int over an integer percentage avoids float

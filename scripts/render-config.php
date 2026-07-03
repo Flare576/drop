@@ -30,7 +30,16 @@ if ($templatePath === null || $outputPath === null) {
     exit(1);
 }
 
-$tokens = ['DB_HOSTNAME', 'DB_DATABASE', 'DB_USERNAME', 'DB_PASSWORD', 'DATA_PATH'];
+$requiredTokens = ['DB_HOSTNAME', 'DB_DATABASE', 'DB_USERNAME', 'DB_PASSWORD', 'DATA_PATH'];
+// DB_SOCKET is optional -- most deployments (this host's TCP-based MySQL, local Docker
+// dev) never set it. getConnection() branches on `defined('DB_SOCKET')`, not on an
+// empty-string value, so an unset DB_SOCKET must leave the constant genuinely
+// undefined, not defined-as-''. When the env var is absent, the whole `define(...)`
+// line is dropped from the rendered output rather than substituted with an empty
+// string (Beta QA finding M3 -- this makes the documented unix-socket branch actually
+// reachable through the real render/deploy path when a future target needs it, without
+// forcing every OTHER deployment, which has no socket, to carry a no-op define).
+$optionalLineTokens = ['DB_SOCKET'];
 
 $template = file_get_contents($templatePath);
 if ($template === false) {
@@ -38,17 +47,37 @@ if ($template === false) {
     exit(1);
 }
 
-foreach ($tokens as $token) {
+function escapeForPhpSingleQuotedLiteral(string $value): string
+{
+    // Escape for a PHP single-quoted string literal. Order matters: backslash first,
+    // so an escaped quote's own backslash is never re-escaped.
+    return str_replace(['\\', "'"], ['\\\\', "\\'"], $value);
+}
+
+foreach ($requiredTokens as $token) {
     $value = getenv($token);
     if ($value === false) {
         fwrite(STDERR, "missing required environment variable: {$token}\n");
         exit(1);
     }
 
-    // Escape for a PHP single-quoted string literal. Order matters: backslash first,
-    // so an escaped quote's own backslash is never re-escaped.
-    $escaped = str_replace(['\\', "'"], ['\\\\', "\\'"], $value);
-    $template = str_replace('{{' . $token . '}}', $escaped, $template);
+    $template = str_replace('{{' . $token . '}}', escapeForPhpSingleQuotedLiteral($value), $template);
+}
+
+foreach ($optionalLineTokens as $token) {
+    $value = getenv($token);
+
+    // GitHub Actions renders a nonexistent secret as an empty string, not an absent
+    // env var -- treat both identically as "not configured", or CI and local dev
+    // would silently diverge on this branch.
+    if ($value === false || $value === '') {
+        // Drop the entire line containing this placeholder (plus its trailing newline)
+        // so the constant is never defined at all.
+        $template = preg_replace('/^.*\{\{' . preg_quote($token, '/') . '\}\}.*\n?/m', '', $template);
+        continue;
+    }
+
+    $template = str_replace('{{' . $token . '}}', escapeForPhpSingleQuotedLiteral($value), $template);
 }
 
 if (file_put_contents($outputPath, $template) === false) {

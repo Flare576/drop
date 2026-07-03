@@ -33,6 +33,13 @@ services:
       - ./scripts:/app/scripts:ro
     ports:
       - "8080:8080"
+    environment:
+      # Real concurrency, not "sequential requests that happen to look concurrent" --
+      # PHP's built-in server is single-worker by default and would silently serialize
+      # every request, making it impossible for a concurrency test to ever actually
+      # exercise (or catch a regression in) the rate-limit race fix (Beta QA finding
+      # I5). PHP_CLI_SERVER_WORKERS (7.4+) spawns real worker processes instead.
+      PHP_CLI_SERVER_WORKERS: "8"
     command: >
       sh -c "docker-php-ext-install pdo_mysql
       && php -S 0.0.0.0:8080 -t /app/api /app/docker/dev-router.php"

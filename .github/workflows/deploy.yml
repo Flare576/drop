@@ -6,7 +6,8 @@
 # provisioned separately from ei/mylibrary — no credentials are shared across apps.
 # Secrets used by this workflow:
 #   Repo secrets:      SFTP_HOST, SFTP_USERNAME, SFTP_PASSWORD
-#   "Prod" env secrets: DB_HOST, DB_USERNAME, DB_PASSWORD, DB_DATABASE, DATA_PATH
+#   "Prod" env secrets: DB_HOST, DB_USERNAME, DB_PASSWORD, DB_DATABASE, DATA_PATH,
+#     DB_SOCKET (optional -- unix socket path, not currently used on this TCP-only host)
 # (DB_DATABASE / DATA_PATH still need to be added to the Prod environment — see
 # api/config.php.template for what each configures. There is no PUSH_TOKEN secret
 # any more -- the POST team-gate now lives in the allowed_auth DB table, populated
@@ -89,6 +90,11 @@ jobs:
           DB_USERNAME: ${{ secrets.DB_USERNAME }}
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
           DATA_PATH: ${{ secrets.DATA_PATH }}
+          # Optional -- not currently set as a real secret on this host (flare576.com's
+          # MySQL is TCP, not unix-socket), left wired here so the branch is reachable the
+          # moment a deployment target needs it. Empty/unset renders identically: render-
+          # config.php drops the DB_SOCKET define entirely (Beta QA finding M3).
+          DB_SOCKET: ${{ secrets.DB_SOCKET }}
         run: |
           php scripts/render-config.php api/config.php.template api/config.php
           php -l api/config.php

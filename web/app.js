@@ -69,7 +69,14 @@ async function fetchList() {
     throw new ApiError(await safeErrorMessage(res), res.status);
   }
   const data = await res.json();
-  return Array.isArray(data.items) ? data.items : [];
+  // A malformed `items` (missing, null, wrong type) is a contract violation from the
+  // relay -- silently coercing it to [] made a wrong API host, proxy corruption, or
+  // server drift look identical to "you have nothing pending" (Beta QA finding M1).
+  // Surface it as a visible error instead of a false-neutral empty state.
+  if (!Array.isArray(data.items)) {
+    throw new ApiError('Server returned an unexpected response. Please try again.', res.status);
+  }
+  return data.items;
 }
 
 async function fetchArtifact(artifactId) {
