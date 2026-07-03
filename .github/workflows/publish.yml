@@ -1,0 +1,66 @@
+# Publishes the `f-drop` CLI to npm via OIDC trusted publishing (no stored npm token).
+#
+# One-time manual step before this workflow can ever succeed: npm requires a brand-new
+# package's FIRST version to be published by hand (`npm login` + `npm publish --access
+# public` from a local machine) -- trusted publishing can only be configured for a
+# package that already exists on the registry. After that one manual publish, go to
+# https://www.npmjs.com/package/f-drop/access -> Trusted Publisher -> GitHub Actions,
+# and register this exact repo + workflow filename (publish.yml) before tagging a
+# second release through CI.
+
+name: Publish to npm
+
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Bun (this project is Bun-native -- push.ts runs under Bun, not Node)
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Typecheck (cli/ + shared/)
+        run: bun run typecheck
+
+      - name: Smoke test push.ts still runs (no working-tree changes -> exit 0)
+        # Fake creds only reach requireCredentials(); a clean checkout has no working-
+        # tree changes, so captureDiff() returns empty and push.ts exits 0 before ever
+        # touching the network -- this never makes a real request to the live relay.
+        run: bun run cli/push.ts
+        env:
+          DROP_USERNAME: ci-smoke-test
+          DROP_PASSPHRASE: ci-smoke-test-not-a-real-secret
+          DROP_AUTH: ci-smoke-test
+
+  publish:
+    needs: test
+    runs-on: ubuntu-latest
+    environment: NPM
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+
+      - run: npm ci
+
+      # No build step: push.ts and shared/crypto.ts ship as raw TypeScript, executed
+      # directly by Bun at install time (via the "bin" field in package.json) -- there
+      # is no compiled dist/ output to produce, unlike ei's tsc-to-dist pipeline.
+      - run: npm publish --access public

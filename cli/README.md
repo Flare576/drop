@@ -87,14 +87,24 @@ simultaneous staged + unstaged + untracked changes: identical hash both times.
 --api-base <url>    Overrides DROP_API_BASE
 ```
 
-## Running it directly
+## Running it
+
+Three equivalent ways to invoke this, in order of "least setup required":
 
 ```sh
-bun run cli/push.ts
+bunx f-drop                # once published to npm — no local clone needed at all
+bun run drop/cli/push.ts   # curl'd down standalone (see skills/drop-diff/SKILL.md)
+bun run cli/push.ts        # from inside this repo
 ```
 
-Requires Bun (imports `../shared/crypto.ts` directly — no build step, per the
-project's `shared/crypto.ts` being written to run unmodified under Bun).
+All three run the exact same script — `bunx f-drop` resolves to `cli/push.ts` via the
+`bin` field in `package.json`. Requires Bun either way (imports `../shared/crypto.ts`
+directly — no build step, per the project's `shared/crypto.ts` being written to run
+unmodified under Bun).
+
+See `skills/drop/SKILL.md` and `skills/drop-diff/SKILL.md` for the model-facing version
+of this doc — a coding agent invoking this on a user's behalf reads those, not this
+file, to decide when and how to call `push.ts`.
 
 ---
 

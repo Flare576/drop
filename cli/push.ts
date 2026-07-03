@@ -286,8 +286,16 @@ async function main(): Promise<void> {
 
   if (response.status === 429) {
     const retryAfterHeader = response.headers.get("Retry-After");
-    const body = await response.json().catch(() => null as { retry_after?: number } | null);
-    const retryAfterSeconds = body?.retry_after ?? (retryAfterHeader ? Number(retryAfterHeader) : undefined);
+
+    let bodyRetryAfter: number | undefined;
+    try {
+      const body = (await response.json()) as { retry_after?: number };
+      bodyRetryAfter = body.retry_after;
+    } catch {
+      bodyRetryAfter = undefined;
+    }
+
+    const retryAfterSeconds = bodyRetryAfter ?? (retryAfterHeader ? Number(retryAfterHeader) : undefined);
 
     console.error(
       retryAfterSeconds !== undefined

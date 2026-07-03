@@ -1,0 +1,41 @@
+{
+  "name": "f-drop",
+  "version": "0.1.0",
+  "author": "Flare576",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Flare576/drop.git"
+  },
+  "engines": {
+    "bun": ">=1.0.0"
+  },
+  "files": [
+    "cli/",
+    "shared/",
+    "skills/",
+    "README.md",
+    "LICENSE"
+  ],
+  "bin": {
+    "f-drop": "./cli/push.ts"
+  },
+  "description": "Zero-knowledge encrypted dead-drop relay: push a git diff from one machine, pull and decrypt it on another, without the relay ever seeing plaintext.",
+  "keywords": [
+    "encryption",
+    "cli",
+    "git",
+    "relay",
+    "ai-agent",
+    "coding-agent"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "@types/bun": "^1.3.14",
+    "typescript": "^6.0.3"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "npm run typecheck"
+  },
+  "type": "module"
+}
