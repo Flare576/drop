@@ -6,3 +6,6 @@ test-results/
 
 # Generated from config.php.template with real secrets substituted at deploy time — never commit.
 api/config.php
+
+# Keep the project lifecycle file committed even if Flare's global ignore rules catch it.
+!.vroom

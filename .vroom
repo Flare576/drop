@@ -1,0 +1,42 @@
+vroom_type = npm
+
+none:
+
+destroy:
+	docker compose down -v
+	rm -f api/config.php
+
+setup:
+	bun install
+	# DB_SOCKET intentionally omitted -- the local docker-compose db service is reached
+	# over TCP (compose's own network), never a unix socket, so the DB_SOCKET line gets
+	# dropped from the rendered config here exactly like it does when the real deploy
+	# secret is unset (see scripts/render-config.php).
+	docker compose run --rm --no-deps \
+	  -e DB_HOSTNAME=db -e DB_DATABASE=drop_dev -e DB_USERNAME=drop_dev -e DB_PASSWORD=drop_dev \
+	  -e DATA_PATH=/tmp/drop-data \
+	  api php /app/scripts/render-config.php /app/api/config.php.template /app/api/config.php
+
+run:
+	docker compose up -d --wait
+
+stop:
+	docker compose stop
+
+watch:
+	echo 'Why not watch a 🥃'
+
+# --- api/ (PHP) dev/QA helpers -- see docs/adr/0009-docker-for-local-php.md for why this
+# is Docker instead of installing PHP+MySQL on the host. `setup` generates api/config.php
+# and installs JS deps; `run` brings the api+db containers up (detached, waits healthy).
+# These assume `run` has already been called.
+api-lint:
+	docker compose run --rm --no-deps api sh -c 'for f in $$(find /app/api -name "*.php"); do php -l "$$f" || exit 1; done'
+
+api-logs:
+	docker compose logs -f api
+
+api-shell:
+	docker compose exec api sh
+
+# vim: ft=make
