@@ -1,0 +1,10 @@
+RewriteEngine On
+RewriteBase /drop/api/
+
+# Directory listing is not needed and leaks storage layout
+Options -Indexes
+
+# Route all requests (except real files/dirs) to the router
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(.*)$ index.php [L,QSA]

@@ -1,0 +1,7 @@
+node_modules/
+dist/
+*.log
+.DS_Store
+
+# Generated from config.php.template with real secrets substituted at deploy time — never commit.
+api/config.php

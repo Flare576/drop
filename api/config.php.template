@@ -1,0 +1,98 @@
+<?php
+declare(strict_types=1);
+
+/**
+ * drop relay - Configuration
+ *
+ * Generated from config.php.template during CI deploy: {{PLACEHOLDER}} tokens below are
+ * substituted with real secrets via `sed` (see .github/workflows deploy step) and the
+ * result is written out as config.php, which is NOT committed to git.
+ *
+ * This app uses its own isolated SFTP account + MySQL database on the flare576.com host —
+ * it does NOT share credentials with the `ei` or `mylibrary` apps on the same host.
+ */
+
+define('DB_HOSTNAME', '{{DB_HOSTNAME}}');
+define('DB_DATABASE', '{{DB_DATABASE}}');
+define('DB_USERNAME', '{{DB_USERNAME}}');
+define('DB_PASSWORD', '{{DB_PASSWORD}}');
+
+// Storage root for sharded ciphertext blob files. Must be writable by the web server user.
+define('DATA_PATH', '{{DATA_PATH}}');
+
+// Shared secret the push CLI must present via the X-Push-Token header on POST.
+// This is NOT the encryption passphrase — it is a separate, server-known static token
+// gating who may enqueue artifacts at all (the encryption itself is what keeps contents
+// zero-knowledge; this token just keeps randoms from spamming the relay).
+define('PUSH_TOKEN', '{{PUSH_TOKEN}}');
+
+// Rate limiting: max POSTs per userId per rolling window.
+define('RATE_LIMIT_MAX', 30);
+define('RATE_LIMIT_WINDOW', 3600);
+
+// Artifacts expire this many hours after creation if never fetched+deleted.
+define('TTL_HOURS', 48);
+
+// On every POST, this fraction of requests additionally trigger a global sweep that
+// deletes all expired rows/files, regardless of userId. This host cannot reliably run
+// cron (rssh-restricted shell access), so expiry must be self-healing from live traffic.
+define('EXPIRY_SWEEP_PROBABILITY', 0.05);
+
+/**
+ * Lazily-initialized shared PDO connection. Supports either a unix socket or TCP host,
+ * matching the pattern used elsewhere on this host: prefer a socket path if configured,
+ * otherwise fall back to TCP host/port.
+ */
+function getConnection(): PDO
+{
+    static $pdo = null;
+
+    if ($pdo === null) {
+        $socket = defined('DB_SOCKET') ? DB_SOCKET : '';
+        $dsn = $socket !== ''
+            ? sprintf('mysql:unix_socket=%s;dbname=%s;charset=utf8mb4', $socket, DB_DATABASE)
+            : sprintf('mysql:host=%s;dbname=%s;charset=utf8mb4', DB_HOSTNAME, DB_DATABASE);
+
+        try {
+            $pdo = new PDO($dsn, DB_USERNAME, DB_PASSWORD, [
+                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+                PDO::ATTR_EMULATE_PREPARES => false,
+            ]);
+        } catch (PDOException $e) {
+            http_response_code(500);
+            header('Content-Type: application/json');
+            echo json_encode(['error' => 'Database connection failed']);
+            exit;
+        }
+    }
+
+    return $pdo;
+}
+
+/**
+ * Sharded blob path for one artifact: DATA_PATH/{userId[0:2]}/{userId}/{artifactId}.json
+ * Sharding by the first 2 chars of userId avoids one giant flat directory of mailboxes.
+ * Creates the shard directory (recursively) if it does not already exist.
+ */
+function getFilePath(string $userId, string $artifactId): string
+{
+    $shard = substr($userId, 0, 2);
+    $dir = DATA_PATH . '/' . $shard . '/' . $userId;
+
+    if (!is_dir($dir)) {
+        mkdir($dir, 0755, true);
+    }
+
+    return $dir . '/' . $artifactId . '.json';
+}
+
+/**
+ * Relative path (shard/userId/artifactId.json) stored in the drop_items.file_path column,
+ * so the DATA_PATH root can move without invalidating stored rows.
+ */
+function getRelativeFilePath(string $userId, string $artifactId): string
+{
+    return substr($userId, 0, 2) . '/' . $userId . '/' . $artifactId . '.json';
+}
+
