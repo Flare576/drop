@@ -1,0 +1,37 @@
+# Local dev/QA stack for api/ — NOT part of the production deploy path (see
+# .github/workflows/deploy.yml, which SFTPs api/ straight to flare576.com's own
+# PHP/MySQL). This exists so PHP + MySQL never need to be installed on the host
+# machine — see docs/adr/0009-docker-for-local-php.md for why.
+#
+# Usage: `vroom setup` then `vroom run` (see .vroom). Everything here is throwaway:
+# `vroom destroy` removes the containers and the anonymous MySQL data volume together.
+services:
+  db:
+    image: mariadb:11
+    environment:
+      MARIADB_ROOT_PASSWORD: drop_dev_root
+      MARIADB_DATABASE: drop_dev
+      MARIADB_USER: drop_dev
+      MARIADB_PASSWORD: drop_dev
+    volumes:
+      - ./api/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./docker/seed-dev.sql:/docker-entrypoint-initdb.d/02-seed-dev.sql:ro
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+
+  api:
+    image: php:8.3-cli-alpine
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./api:/app/api
+      - ./docker/dev-router.php:/app/docker/dev-router.php:ro
+    ports:
+      - "8080:8080"
+    command: >
+      sh -c "docker-php-ext-install pdo_mysql
+      && php -S 0.0.0.0:8080 -t /app/api /app/docker/dev-router.php"

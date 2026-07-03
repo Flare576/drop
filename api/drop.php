@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 
+/**
  * drop relay - Route handlers
  *
  * All ciphertext ever passing through here is opaque to this server: the body of a POST

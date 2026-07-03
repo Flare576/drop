@@ -13,3 +13,4 @@ Consequences. Not a full MADR template; this is a personal-scale project.
 6. [Git diff/patch, not git bundle, as the artifact format](0006-diff-not-bundle.md)
 7. [TTL expiry is lazy + probabilistic, not cron](0007-ttl-without-cron.md)
 8. [Isolated SFTP account + database per app](0008-isolated-infra-per-app.md)
+9. [Docker for local PHP tooling, not a host install](0009-docker-for-local-php.md)
