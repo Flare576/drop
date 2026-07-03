@@ -3,13 +3,14 @@
 # that serves the sibling `ei` and `mylibrary` apps.
 #
 # This app has its OWN isolated SFTP account and its OWN MySQL database,
-# provisioned separately from ei/mylibrary — no credentials are shared across
-# apps. Secrets used by this workflow:
+# provisioned separately from ei/mylibrary — no credentials are shared across apps.
+# Secrets used by this workflow:
 #   Repo secrets:      SFTP_HOST, SFTP_USERNAME, SFTP_PASSWORD
-#   "Prod" env secrets: DB_HOST, DB_USERNAME, DB_PASSWORD,
-#                        DB_DATABASE, DATA_PATH, PUSH_TOKEN
-# (DB_DATABASE / DATA_PATH / PUSH_TOKEN still need to be added to the Prod
-# environment — see api/config.php.template for what each one configures.)
+#   "Prod" env secrets: DB_HOST, DB_USERNAME, DB_PASSWORD, DB_DATABASE, DATA_PATH
+# (DB_DATABASE / DATA_PATH still need to be added to the Prod environment — see
+# api/config.php.template for what each configures. There is no PUSH_TOKEN secret
+# any more -- the POST team-gate now lives in the allowed_auth DB table, populated
+# manually, not via CI/config.)
 
 name: Deploy to flare576.com
 
@@ -63,7 +64,6 @@ jobs:
               -e "s/{{DB_USERNAME}}/${{ secrets.DB_USERNAME }}/" \
               -e "s/{{DB_PASSWORD}}/${{ secrets.DB_PASSWORD }}/" \
               -e "s/{{DATA_PATH}}/${{ secrets.DATA_PATH }}/" \
-              -e "s/{{PUSH_TOKEN}}/${{ secrets.PUSH_TOKEN }}/" \
               api/config.php.template > api/config.php
 
       - name: Deploy API

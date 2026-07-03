@@ -25,20 +25,23 @@ the same file can be sourced by a shell profile if you want:
 # ~/.doNotCommit.d/.doNotCommit.droprelay
 export DROP_USERNAME=your-username
 export DROP_PASSPHRASE="a long random passphrase, not a real password"
-export DROP_PUSH_TOKEN=the-shared-relay-push-secret
+export DROP_AUTH=team-shared-code-word
 # optional — defaults to https://flare576.com/drop/api if omitted
 export DROP_API_BASE=https://flare576.com/drop/api
 ```
 
 `DROP_USERNAME`/`DROP_PASSPHRASE` derive the AES-GCM key and the opaque userId (via
 `generateUserId()` in `shared/crypto.ts`) — the relay never sees either value, only
-the derived userId and encrypted `{iv, ciphertext}` blobs. `DROP_PUSH_TOKEN` is a
-separate shared secret checked by the relay's `X-Push-Token` header, unrelated to
-encryption. **Never commit this file or put these values in a repo-local `.env`.**
+the derived userId and encrypted `{iv, ciphertext}` blobs. `DROP_AUTH` is a separate,
+unencrypted, shared **team gate** — not a per-user secret and unrelated to encryption —
+checked by the relay against an `allowed_auth` DB table via the `X-Drop-Auth` header. A
+leaked `DROP_AUTH` value lets someone spam the relay with garbage ciphertext under a
+made-up userId; it cannot expose the contents of anything, which still requires the
+passphrase. **Never commit this file or put these values in a repo-local `.env`.**
 
 Precedence when a value is set in more than one place: CLI flag > environment
 variable > this config file. Missing `DROP_USERNAME`/`DROP_PASSPHRASE`/
-`DROP_PUSH_TOKEN` fails immediately with a named list of exactly what's missing —
+`DROP_AUTH` fails immediately with a named list of exactly what's missing —
 there is no silent partial attempt.
 
 ## What it does
@@ -55,12 +58,12 @@ there is no silent partial attempt.
    the encrypted blob.
 5. Derives the userId and AES-GCM key from the credentials, encrypts the envelope,
    and `POST`s `{iv, ciphertext}` to `${DROP_API_BASE}/${userId}` with header
-   `X-Push-Token: <token>`.
+   `X-Drop-Auth: <code>`.
 6. Reports the result: a success receipt (`artifactId` + `expiresAt`), or a specific
-   actionable error for 401 (bad token), 429 (rate limited, with a human-readable
-   retry time), 400 (malformed body — a bug in this script, not your config), or a
-   network failure — never a raw stack trace. Exit code is non-zero on any failure,
-   so a hook can branch on it.
+   actionable error for 403 (unrecognized team-gate code), 429 (rate limited, with a
+   human-readable retry time), 400 (malformed body — a bug in this script, not your
+   config), or a network failure — never a raw stack trace. Exit code is non-zero on
+   any failure, so a hook can branch on it.
 
 ### On the git sequence specifically
 
@@ -76,13 +79,11 @@ changes — that fails the "leave the index exactly as found" requirement.
 writing. Verified via `shasum .git/index` before/after against a repo with
 simultaneous staged + unstaged + untracked changes: identical hash both times.
 
-## CLI flags
-
 ```
 --filename <name>   Override the derived patch filename
 --username <u>      Overrides DROP_USERNAME
 --passphrase <p>    Overrides DROP_PASSPHRASE
---push-token <t>    Overrides DROP_PUSH_TOKEN
+--drop-auth <code>  Overrides DROP_AUTH
 --api-base <url>    Overrides DROP_API_BASE
 ```
 

@@ -43,12 +43,16 @@ guarantee.
 
 Two independent credentials, deliberately not conflated:
 
-- **`X-Push-Token`** (POST only) — a static shared secret known only to the R&P push CLI
-  and this server's config. It gates *who may enqueue artifacts at all*. It has nothing to
-  do with encryption; a leaked push token lets an attacker spam the mailbox with garbage
-  ciphertext, but grants no ability to read anything (they'd still need the passphrase to
-  decrypt whatever they or anyone else pushed). Checked with `hash_equals()` — never `===`
-  — to avoid timing side-channels on a security-relevant string comparison.
+- **`X-Drop-Auth`** (POST only) — a shared team-gate code, checked against the
+  `allowed_auth` table (`code VARCHAR(128) PRIMARY KEY` — a plain indexed lookup, no
+  app-level caching layer; the DB's own buffer pool already makes this cheap, and PHP's
+  shared-nothing request model means an in-process cache would just be re-populated
+  every request anyway). It gates *who may enqueue artifacts at all* and has nothing to
+  do with encryption — a leaked code lets someone spam a mailbox with garbage
+  ciphertext, but grants no ability to read anything back (they'd still need the
+  passphrase to decrypt whatever anyone pushed). Codes are inserted manually (e.g. via
+  phpMyAdmin), not seeded in `schema.sql`, so a code never lands in git history.
+  Unrecognized or missing code → `403`.
 - **`userId` in the URL path** (GET/HEAD/DELETE) — the zero-knowledge model. Since it's a
   PBKDF2-derived, effectively unguessable value, knowing it is treated as proof you also
   know the underlying `username:passphrase`. There is no separate password/session layer

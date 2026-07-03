@@ -10,7 +10,7 @@
  *
  * Usage:
  *   bun run cli/push.ts [--filename <name>] [--username <u>] [--passphrase <p>]
- *                        [--push-token <t>] [--api-base <url>]
+ *                        [--drop-auth <code>] [--api-base <url>]
  *
  * Config precedence (highest wins): CLI flags > environment variables > config file
  * at ~/.doNotCommit.d/.doNotCommit.droprelay (KEY=value or `export KEY=value` lines,
@@ -32,7 +32,7 @@ interface CliFlags {
   filename?: string;
   username?: string;
   passphrase?: string;
-  pushToken?: string;
+  dropAuth?: string;
   apiBase?: string;
 }
 
@@ -42,7 +42,7 @@ function parseArgs(argv: string[]): CliFlags {
     "--filename": "filename",
     "--username": "username",
     "--passphrase": "passphrase",
-    "--push-token": "pushToken",
+    "--drop-auth": "dropAuth",
     "--api-base": "apiBase",
   };
 
@@ -110,7 +110,7 @@ async function readConfigFile(path: string): Promise<Record<string, string>> {
 interface ResolvedConfig {
   username?: string;
   passphrase?: string;
-  pushToken?: string;
+  dropAuth?: string;
   apiBase: string;
 }
 
@@ -123,17 +123,17 @@ async function resolveConfig(flags: CliFlags): Promise<ResolvedConfig> {
   return {
     username: pick(flags.username, "DROP_USERNAME"),
     passphrase: pick(flags.passphrase, "DROP_PASSPHRASE"),
-    pushToken: pick(flags.pushToken, "DROP_PUSH_TOKEN"),
+    dropAuth: pick(flags.dropAuth, "DROP_AUTH"),
     apiBase: pick(flags.apiBase, "DROP_API_BASE") ?? DEFAULT_API_BASE,
   };
 }
 
 /** Fails loudly, naming exactly which values are missing. No partial attempt. */
-function requireCredentials(config: ResolvedConfig): CryptoCredentials & { pushToken: string } {
+function requireCredentials(config: ResolvedConfig): CryptoCredentials & { dropAuth: string } {
   const missing: string[] = [];
   if (!config.username) missing.push("DROP_USERNAME (--username)");
   if (!config.passphrase) missing.push("DROP_PASSPHRASE (--passphrase)");
-  if (!config.pushToken) missing.push("DROP_PUSH_TOKEN (--push-token)");
+  if (!config.dropAuth) missing.push("DROP_AUTH (--drop-auth)");
 
   if (missing.length > 0) {
     console.error("push.ts: missing required configuration:");
@@ -142,7 +142,7 @@ function requireCredentials(config: ResolvedConfig): CryptoCredentials & { pushT
     process.exit(1);
   }
 
-  return { username: config.username!, passphrase: config.passphrase!, pushToken: config.pushToken! };
+  return { username: config.username!, passphrase: config.passphrase!, dropAuth: config.dropAuth! };
 }
 
 // ---------------------------------------------------------------------------------
@@ -260,7 +260,7 @@ async function main(): Promise<void> {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "X-Push-Token": credentials.pushToken,
+        "X-Drop-Auth": credentials.dropAuth,
       },
       body: JSON.stringify(encrypted),
     });
@@ -278,9 +278,9 @@ async function main(): Promise<void> {
     process.exit(0);
   }
 
-  if (response.status === 401) {
-    console.error("push.ts: push rejected (401 Unauthorized) — DROP_PUSH_TOKEN does not match the relay's configured token.");
-    console.error(`Check the value in ${CONFIG_FILE} or the DROP_PUSH_TOKEN environment variable.`);
+  if (response.status === 403) {
+    console.error("push.ts: push rejected (403 Forbidden) — DROP_AUTH does not match a code the relay currently recognizes.");
+    console.error(`Check the value in ${CONFIG_FILE} or the DROP_AUTH environment variable.`);
     process.exit(1);
   }
 

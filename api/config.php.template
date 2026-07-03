@@ -20,11 +20,8 @@ define('DB_PASSWORD', '{{DB_PASSWORD}}');
 // Storage root for sharded ciphertext blob files. Must be writable by the web server user.
 define('DATA_PATH', '{{DATA_PATH}}');
 
-// Shared secret the push CLI must present via the X-Push-Token header on POST.
-// This is NOT the encryption passphrase — it is a separate, server-known static token
-// gating who may enqueue artifacts at all (the encryption itself is what keeps contents
-// zero-knowledge; this token just keeps randoms from spamming the relay).
-define('PUSH_TOKEN', '{{PUSH_TOKEN}}');
+// Team-gate codes ("who's allowed to push at all") now live in the allowed_auth DB
+// table, not a static config secret -- see isAuthCodeValid() below and schema.sql.
 
 // Rate limiting: max POSTs per userId per rolling window.
 define('RATE_LIMIT_MAX', 30);
@@ -96,3 +93,21 @@ function getRelativeFilePath(string $userId, string $artifactId): string
     return substr($userId, 0, 2) . '/' . $userId . '/' . $artifactId . '.json';
 }
 
+/**
+ * Checks a caller-supplied code against the allowed_auth table. Not a per-user secret --
+ * a shared "who's on the team" gate for POST, independent of the encryption passphrase.
+ * A plain indexed primary-key lookup; no app-level caching layer (the DB's own buffer
+ * pool already makes this cheap, and PHP's shared-nothing request model means an
+ * in-process cache would just be re-populated every single request anyway).
+ */
+function isAuthCodeValid(PDO $pdo, string $code): bool
+{
+    if ($code === '') {
+        return false;
+    }
+
+    $stmt = $pdo->prepare('SELECT 1 FROM allowed_auth WHERE code = ?');
+    $stmt->execute([$code]);
+
+    return $stmt->fetchColumn() !== false;
+}

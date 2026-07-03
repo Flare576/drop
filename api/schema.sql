@@ -27,3 +27,16 @@ CREATE TABLE IF NOT EXISTS drop_rate_limits (
     requests JSON NOT NULL,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Team gate for POST (enqueue). NOT a per-user secret and NOT related to encryption --
+-- it's a shared "who's on the team" code, checked via X-Drop-Auth header, that keeps
+-- anonymous internet traffic from filling this host's disk with garbage ciphertext
+-- blobs under made-up userIds. Compromise of a code here cannot expose any artifact's
+-- content (that's still fully gated by the PBKDF2 passphrase) -- it only lets someone
+-- enqueue more encrypted junk they can't read back out.
+--
+-- No seed row here deliberately -- insert real codes manually (e.g. via phpMyAdmin)
+-- so the value never lands in git history.
+CREATE TABLE IF NOT EXISTS allowed_auth (
+    code VARCHAR(128) PRIMARY KEY
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

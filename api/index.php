@@ -21,7 +21,7 @@ declare(strict_types=1);
 // other file, so they are present even if a later require/parse step fatals. ---
 header('Access-Control-Allow-Origin: *', true);
 header('Access-Control-Allow-Methods: GET, POST, DELETE, HEAD, OPTIONS', true);
-header('Access-Control-Allow-Headers: Content-Type, X-Push-Token', true);
+header('Access-Control-Allow-Headers: Content-Type, X-Drop-Auth', true);
 header('Access-Control-Expose-Headers: X-Item-Count', true);
 
 // Preflight is CORS-only; nothing else in this app needs to run for it.

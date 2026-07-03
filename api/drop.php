@@ -1,7 +1,6 @@
 <?php
 declare(strict_types=1);
 
-/**
  * drop relay - Route handlers
  *
  * All ciphertext ever passing through here is opaque to this server: the body of a POST
@@ -139,20 +138,21 @@ function recordRateLimitRequest(PDO $pdo, string $userId, array $timestamps): vo
 
 /**
  * POST /drop/api/{userId} - enqueue one encrypted artifact.
- * Requires a valid X-Push-Token header (separate shared secret, not the encryption
- * passphrase). Body must be exactly {"iv": "<base64>", "ciphertext": "<base64>"}.
+ * Requires a valid X-Drop-Auth header (a shared team-gate code, checked against the
+ * allowed_auth table -- not the encryption passphrase, not a per-user secret). Body must
+ * be exactly {"iv": "<base64>", "ciphertext": "<base64>"}.
  */
 function handlePost(string $userId): void
 {
-    $providedToken = $_SERVER['HTTP_X_PUSH_TOKEN'] ?? '';
-    if (!hash_equals(PUSH_TOKEN, $providedToken)) {
-        http_response_code(401);
-        echo json_encode(['error' => 'Unauthorized']);
+    $pdo = getConnection();
+
+    $providedCode = $_SERVER['HTTP_X_DROP_AUTH'] ?? '';
+    if (!isAuthCodeValid($pdo, $providedCode)) {
+        http_response_code(403);
+        echo json_encode(['error' => 'Forbidden']);
 
         return;
     }
-
-    $pdo = getConnection();
 
     $rateCheck = checkRateLimit($pdo, $userId);
     if (!$rateCheck['allowed']) {
