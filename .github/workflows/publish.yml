@@ -12,8 +12,9 @@ name: Publish to npm
 
 on:
   push:
+    branches: ['main']
     tags: ['v*']
-
+  workflow_dispatch:
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -30,6 +31,17 @@ jobs:
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
+
+      # Pinned + checksummed so a compromised upstream script can't run arbitrary code
+      # with this job's Docker/host access. Drives the same api+db Docker Compose
+      # stack tests/bun/api's relay suite depends on (its docker-stack.ts helper
+      # shells out to `vroom`), exactly like local dev -- see README.md's "Local
+      # development" section and docs/adr/0009-docker-for-local-php.md.
+      - name: Install vroom
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/Flare576/vroom/v12.3.1/bin/vroom -o /tmp/vroom
+          echo "25bf3f895c2eba09c3f596f70ebdf30b9fcc1ff6b55e9105cf2c0b46d0bd20e5  /tmp/vroom" | shasum -a 256 -c -
+          sudo install -m 0755 /tmp/vroom /usr/local/bin/vroom
 
       - name: Install dependencies
         run: npm ci
@@ -53,6 +65,7 @@ jobs:
           DROP_AUTH: ci-smoke-test
 
   publish:
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     needs: test
     runs-on: ubuntu-latest
     environment: NPM
