@@ -34,20 +34,22 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Run tests
-        # No root package.json exists yet as of this writing. Checked at
-        # runtime (not baked in) since web/ and cli/ tracks may add one later.
-        # Runs real tests when a root "test" script exists; otherwise this
-        # job stays a structural placeholder so build-and-deploy always has
-        # something to gate on.
-        run: |
-          if [ -f package.json ] && node -e "process.exit(require('./package.json').scripts?.test ? 0 : 1)"; then
-            npm ci
-            npm test
-          else
-            echo "no tests configured yet"
-            exit 0
-          fi
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run full test harness
+        # Ship the same bar that is green locally: typecheck + Bun suite + Playwright
+        # browser suite. Beta's post-round2 review found the old gate was narrower than
+        # the repo's actual trust-boundary coverage.
+        run: npm run test:all
 
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
