@@ -1,0 +1,313 @@
+#!/usr/bin/env bun
+/**
+ * push.ts — encrypts a git working-tree diff and pushes it to the drop relay.
+ *
+ * Harness-agnostic: this file has zero knowledge of which coding harness (OhMyPi,
+ * Claude Code, or a bare terminal) invoked it. It only cares about the git repo it
+ * runs in and the four DROP_* config values. Wiring a harness's hook config to shell
+ * out to `bun run cli/push.ts` is the entirety of the per-harness integration work —
+ * see cli/README.md.
+ *
+ * Usage:
+ *   bun run cli/push.ts [--filename <name>] [--username <u>] [--passphrase <p>]
+ *                        [--push-token <t>] [--api-base <url>]
+ *
+ * Config precedence (highest wins): CLI flags > environment variables > config file
+ * at ~/.doNotCommit.d/.doNotCommit.droprelay (KEY=value or `export KEY=value` lines,
+ * matching this user's existing untracked-secrets convention).
+ */
+
+import { homedir } from "node:os";
+import { join, basename } from "node:path";
+import { generateUserId, encrypt, type CryptoCredentials } from "../shared/crypto.ts";
+
+const CONFIG_FILE = join(homedir(), ".doNotCommit.d", ".doNotCommit.droprelay");
+const DEFAULT_API_BASE = "https://flare576.com/drop/api";
+
+// ---------------------------------------------------------------------------------
+// CLI argument parsing
+// ---------------------------------------------------------------------------------
+
+interface CliFlags {
+  filename?: string;
+  username?: string;
+  passphrase?: string;
+  pushToken?: string;
+  apiBase?: string;
+}
+
+function parseArgs(argv: string[]): CliFlags {
+  const flags: CliFlags = {};
+  const table: Record<string, keyof CliFlags> = {
+    "--filename": "filename",
+    "--username": "username",
+    "--passphrase": "passphrase",
+    "--push-token": "pushToken",
+    "--api-base": "apiBase",
+  };
+
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    const eq = arg.indexOf("=");
+    const [flag, inlineValue] = eq !== -1 && arg.startsWith("--") ? [arg.slice(0, eq), arg.slice(eq + 1)] : [arg, undefined];
+
+    const key = table[flag];
+    if (!key) continue;
+
+    if (inlineValue !== undefined) {
+      flags[key] = inlineValue;
+    } else {
+      const value = argv[++i];
+      if (value === undefined) {
+        console.error(`Missing value for ${flag}`);
+        process.exit(1);
+      }
+      flags[key] = value;
+    }
+  }
+
+  return flags;
+}
+
+// ---------------------------------------------------------------------------------
+// Config file (~/.doNotCommit.d/.doNotCommit.droprelay)
+// ---------------------------------------------------------------------------------
+
+/** Parses simple `KEY=value` lines, tolerating `export KEY=value`, comments, and quoted values. */
+async function readConfigFile(path: string): Promise<Record<string, string>> {
+  const file = Bun.file(path);
+  if (!(await file.exists())) return {};
+
+  const values: Record<string, string> = {};
+  const text = await file.text();
+
+  for (const rawLine of text.split("\n")) {
+    const line = rawLine.trim();
+    if (line === "" || line.startsWith("#")) continue;
+
+    const withoutExport = line.startsWith("export ") ? line.slice("export ".length) : line;
+    const eq = withoutExport.indexOf("=");
+    if (eq === -1) continue;
+
+    const key = withoutExport.slice(0, eq).trim();
+    let value = withoutExport.slice(eq + 1).trim();
+
+    // Strip matching surrounding quotes, and drop trailing inline comments on
+    // unquoted values (mirrors typical shell-sourced env file conventions).
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1);
+    } else {
+      const hashIdx = value.indexOf(" #");
+      if (hashIdx !== -1) value = value.slice(0, hashIdx).trim();
+    }
+
+    values[key] = value;
+  }
+
+  return values;
+}
+
+interface ResolvedConfig {
+  username?: string;
+  passphrase?: string;
+  pushToken?: string;
+  apiBase: string;
+}
+
+async function resolveConfig(flags: CliFlags): Promise<ResolvedConfig> {
+  const fileValues = await readConfigFile(CONFIG_FILE);
+
+  const pick = (flagValue: string | undefined, envKey: string): string | undefined =>
+    flagValue ?? process.env[envKey] ?? fileValues[envKey];
+
+  return {
+    username: pick(flags.username, "DROP_USERNAME"),
+    passphrase: pick(flags.passphrase, "DROP_PASSPHRASE"),
+    pushToken: pick(flags.pushToken, "DROP_PUSH_TOKEN"),
+    apiBase: pick(flags.apiBase, "DROP_API_BASE") ?? DEFAULT_API_BASE,
+  };
+}
+
+/** Fails loudly, naming exactly which values are missing. No partial attempt. */
+function requireCredentials(config: ResolvedConfig): CryptoCredentials & { pushToken: string } {
+  const missing: string[] = [];
+  if (!config.username) missing.push("DROP_USERNAME (--username)");
+  if (!config.passphrase) missing.push("DROP_PASSPHRASE (--passphrase)");
+  if (!config.pushToken) missing.push("DROP_PUSH_TOKEN (--push-token)");
+
+  if (missing.length > 0) {
+    console.error("push.ts: missing required configuration:");
+    for (const m of missing) console.error(`  - ${m}`);
+    console.error(`Resolve via CLI flag, environment variable, or ${CONFIG_FILE}`);
+    process.exit(1);
+  }
+
+  return { username: config.username!, passphrase: config.passphrase!, pushToken: config.pushToken! };
+}
+
+// ---------------------------------------------------------------------------------
+// Git diff capture
+// ---------------------------------------------------------------------------------
+
+/**
+ * Captures a full working-tree diff (staged + unstaged + untracked, binary-safe)
+ * against HEAD, without mutating the repo's real index or working tree.
+ *
+ * The task's reference sequence — `git add -A -N` (intent-to-add), `git diff HEAD
+ * --binary`, `git reset` — was verified against a repo that already had staged
+ * changes: `git reset` with no arguments unstages *everything*, including changes
+ * that were staged before this script ran, which breaks "leave the index untouched".
+ * Instead, this copies the real index to a scratch file, points GIT_INDEX_FILE at
+ * the copy for the add+diff steps, and discards the copy — the real .git/index is
+ * never opened for writing. Verified byte-identical via `shasum .git/index`
+ * before/after against a repo with staged+unstaged+untracked changes simultaneously.
+ */
+async function captureDiff(repoRoot: string): Promise<string> {
+  const realIndexPath = (await Bun.$`git rev-parse --git-path index`.cwd(repoRoot).quiet().text()).trim();
+  const scratchIndexPath = join(repoRoot, `.git`, `push-ts-scratch-index-${process.pid}-${Date.now()}`);
+
+  const realIndexFile = Bun.file(join(repoRoot, realIndexPath));
+  if (await realIndexFile.exists()) {
+    await Bun.write(scratchIndexPath, realIndexFile);
+  }
+  // If there's no index yet (brand new repo, nothing ever added), omit the copy —
+  // git treats a missing GIT_INDEX_FILE as an empty index, which is correct here.
+
+  const env = { ...process.env, GIT_INDEX_FILE: scratchIndexPath };
+
+  try {
+    await Bun.$`git add -A -N .`.cwd(repoRoot).env(env).quiet();
+    const diff = await Bun.$`git diff HEAD --binary -M`.cwd(repoRoot).env(env).quiet().text();
+    return diff;
+  } finally {
+    await Bun.$`rm -f ${scratchIndexPath}`.quiet().nothrow();
+  }
+}
+
+// ---------------------------------------------------------------------------------
+// Retry-After / human time formatting
+// ---------------------------------------------------------------------------------
+
+function formatDuration(totalSeconds: number): string {
+  if (!Number.isFinite(totalSeconds) || totalSeconds < 0) return `${totalSeconds} seconds`;
+
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = Math.floor(totalSeconds % 60);
+
+  const parts: string[] = [];
+  if (hours > 0) parts.push(`${hours} hour${hours === 1 ? "" : "s"}`);
+  if (minutes > 0) parts.push(`${minutes} minute${minutes === 1 ? "" : "s"}`);
+  if (seconds > 0 || parts.length === 0) parts.push(`${seconds} second${seconds === 1 ? "" : "s"}`);
+
+  return parts.join(", ");
+}
+
+// ---------------------------------------------------------------------------------
+// Main
+// ---------------------------------------------------------------------------------
+
+async function main(): Promise<void> {
+  const flags = parseArgs(process.argv.slice(2));
+  const config = await resolveConfig(flags);
+  const credentials = requireCredentials(config);
+
+  // Confirm we're in a git repo and get its top-level dir + basename for the
+  // default filename, before touching the index at all.
+  let repoRoot: string;
+  try {
+    repoRoot = (await Bun.$`git rev-parse --show-toplevel`.quiet().text()).trim();
+  } catch {
+    console.error("push.ts: not inside a git repository (git rev-parse --show-toplevel failed)");
+    process.exit(1);
+  }
+
+  let patch: string;
+  try {
+    patch = await captureDiff(repoRoot);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`push.ts: failed to compute git diff: ${message}`);
+    process.exit(1);
+  }
+
+  if (patch.trim() === "") {
+    console.log("Nothing to push (no working tree changes)");
+    process.exit(0);
+  }
+
+  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const filename = flags.filename ?? `${basename(repoRoot)}-${timestamp}.patch`;
+
+  const envelope = JSON.stringify({ filename, patch });
+
+  let userId: string;
+  let encrypted: { iv: string; ciphertext: string };
+  try {
+    userId = await generateUserId(credentials);
+    encrypted = await encrypt(envelope, credentials);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`push.ts: encryption failed: ${message}`);
+    process.exit(1);
+  }
+
+  const url = `${config.apiBase.replace(/\/+$/, "")}/${userId}`;
+
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Push-Token": credentials.pushToken,
+      },
+      body: JSON.stringify(encrypted),
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`push.ts: request to ${config.apiBase} failed (network error): ${message}`);
+    process.exit(1);
+  }
+
+  if (response.status === 201) {
+    const body = (await response.json()) as { artifactId: string; expiresAt: string };
+    console.log("Push succeeded:");
+    console.log(`  artifactId: ${body.artifactId}`);
+    console.log(`  expiresAt:  ${body.expiresAt}`);
+    process.exit(0);
+  }
+
+  if (response.status === 401) {
+    console.error("push.ts: push rejected (401 Unauthorized) — DROP_PUSH_TOKEN does not match the relay's configured token.");
+    console.error(`Check the value in ${CONFIG_FILE} or the DROP_PUSH_TOKEN environment variable.`);
+    process.exit(1);
+  }
+
+  if (response.status === 429) {
+    const retryAfterHeader = response.headers.get("Retry-After");
+    const body = await response.json().catch(() => null as { retry_after?: number } | null);
+    const retryAfterSeconds = body?.retry_after ?? (retryAfterHeader ? Number(retryAfterHeader) : undefined);
+
+    console.error(
+      retryAfterSeconds !== undefined
+        ? `push.ts: rate-limited by the relay. Try again in ${formatDuration(retryAfterSeconds)}.`
+        : "push.ts: rate-limited by the relay. Try again shortly.",
+    );
+    process.exit(1);
+  }
+
+  if (response.status === 400) {
+    console.error("push.ts: relay rejected the request body as malformed (400) — this indicates a bug in push.ts's envelope construction, not a config issue.");
+    process.exit(1);
+  }
+
+  console.error(`push.ts: push failed with unexpected status ${response.status} ${response.statusText}`);
+  process.exit(1);
+}
+
+main().catch((err) => {
+  const message = err instanceof Error ? err.message : String(err);
+  console.error(`push.ts: unexpected error: ${message}`);
+  process.exit(1);
+});

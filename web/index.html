@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Drop Relay</title>
+  <link rel="stylesheet" href="style.css">
+  <script>
+    // Local-testing override: index.html?apiBase=http://localhost:8787/drop/api
+    // See web/README.md "Local testing" section. Not a secret — safe to leave in markup.
+    window.DROP_API_BASE = new URLSearchParams(location.search).get('apiBase')
+      || 'https://flare576.com/drop/api';
+  </script>
+</head>
+<body>
+  <main>
+    <h1>Drop Relay</h1>
+
+    <section id="login-view" class="card">
+      <form id="login-form">
+        <div class="form-group">
+          <label for="username">Username</label>
+          <input type="text" id="username" name="username" autocomplete="username" required>
+        </div>
+        <div class="form-group">
+          <label for="passphrase">Passphrase</label>
+          <input type="password" id="passphrase" name="passphrase" autocomplete="current-password" required>
+        </div>
+        <button type="submit" id="login-btn">Sign In</button>
+        <p class="hint">Credentials never leave this browser — only a derived ID is sent.</p>
+        <div id="login-error" class="error" role="alert"></div>
+      </form>
+    </section>
+
+    <section id="list-view" class="card" hidden>
+      <header id="list-header">
+        <span id="userid-display" class="muted"></span>
+        <div class="spacer"></div>
+        <button type="button" id="refresh-btn">Refresh</button>
+        <button type="button" id="logout-btn" class="secondary">Sign Out</button>
+      </header>
+
+      <div id="list-status" class="status" role="status"></div>
+      <ul id="artifact-list"></ul>
+    </section>
+  </main>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

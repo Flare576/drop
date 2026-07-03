@@ -1,0 +1,106 @@
+# Encrypted dead-drop relay — deploys to flare576.com (IONOS shared hosting,
+# rssh-restricted SFTP-only access, no shell/mkdir over SSH), the same host
+# that serves the sibling `ei` and `mylibrary` apps.
+#
+# This app has its OWN isolated SFTP account and its OWN MySQL database,
+# provisioned separately from ei/mylibrary — no credentials are shared across
+# apps. Secrets used by this workflow:
+#   Repo secrets:      SFTP_HOST, SFTP_USERNAME, SFTP_PASSWORD
+#   "Prod" env secrets: DB_HOST, DB_USERNAME, DB_PASSWORD,
+#                        DB_DATABASE, DATA_PATH, PUSH_TOKEN
+# (DB_DATABASE / DATA_PATH / PUSH_TOKEN still need to be added to the Prod
+# environment — see api/config.php.template for what each one configures.)
+
+name: Deploy to flare576.com
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Run tests
+        # No root package.json exists yet as of this writing. Checked at
+        # runtime (not baked in) since web/ and cli/ tracks may add one later.
+        # Runs real tests when a root "test" script exists; otherwise this
+        # job stays a structural placeholder so build-and-deploy always has
+        # something to gate on.
+        run: |
+          if [ -f package.json ] && node -e "process.exit(require('./package.json').scripts?.test ? 0 : 1)"; then
+            npm ci
+            npm test
+          else
+            echo "no tests configured yet"
+            exit 0
+          fi
+
+  build-and-deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    environment: Prod
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # No bundler/dist step here (unlike ei's Vite build) — web/ is plain
+      # static files deployed as-is, and api/ is plain PHP.
+
+      - name: Generate API config
+        run: |
+          sed -e "s/{{DB_HOSTNAME}}/${{ secrets.DB_HOST }}/" \
+              -e "s/{{DB_DATABASE}}/${{ secrets.DB_DATABASE }}/" \
+              -e "s/{{DB_USERNAME}}/${{ secrets.DB_USERNAME }}/" \
+              -e "s/{{DB_PASSWORD}}/${{ secrets.DB_PASSWORD }}/" \
+              -e "s/{{DATA_PATH}}/${{ secrets.DATA_PATH }}/" \
+              -e "s/{{PUSH_TOKEN}}/${{ secrets.PUSH_TOKEN }}/" \
+              api/config.php.template > api/config.php
+
+      - name: Deploy API
+        uses: wlixcc/SFTP-Deploy-Action@v1.2.4
+        with:
+          server: ${{ secrets.SFTP_HOST }}
+          username: ${{ secrets.SFTP_USERNAME }}
+          password: ${{ secrets.SFTP_PASSWORD }}
+          local_path: ./api/
+          remote_path: /
+          sftpArgs: '-o ConnectTimeout=5'
+          sftp_only: true
+
+      - name: Deploy api/.htaccess (dotfile, excluded from glob)
+        uses: wlixcc/SFTP-Deploy-Action@v1.2.4
+        with:
+          server: ${{ secrets.SFTP_HOST }}
+          username: ${{ secrets.SFTP_USERNAME }}
+          password: ${{ secrets.SFTP_PASSWORD }}
+          local_path: ./api/.htaccess
+          remote_path: /api
+          sftpArgs: '-o ConnectTimeout=5'
+          sftp_only: true
+
+      # web/ is plain static files (index.html, app.js, crypto.js, style.css)
+      # — confirmed with the web-UI track: crypto.js is a hand-copied,
+      # type-annotation-stripped port of shared/crypto.ts, so web/ is fully
+      # self-contained and shared/ is never deployed alongside it. No
+      # web/.htaccess step either — it's static assets only, no client-side
+      # routing/rewrite rules to protect (unlike api/'s router dispatch).
+      - name: Deploy web
+        uses: wlixcc/SFTP-Deploy-Action@v1.2.4
+        with:
+          server: ${{ secrets.SFTP_HOST }}
+          username: ${{ secrets.SFTP_USERNAME }}
+          password: ${{ secrets.SFTP_PASSWORD }}
+          local_path: ./web/*
+          remote_path: /
+          sftpArgs: '-o ConnectTimeout=5'
+          sftp_only: true
