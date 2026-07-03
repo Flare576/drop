@@ -84,8 +84,13 @@ async function fetchArtifact(artifactId) {
 }
 
 async function deleteArtifact(artifactId) {
-  // Server always returns 204, even for an already-gone artifact — nothing to inspect.
-  await apiRequest(`/${userId}/${artifactId}`, { method: 'DELETE' });
+  const res = await apiRequest(`/${userId}/${artifactId}`, { method: 'DELETE' });
+  // Server treats delete as idempotent and returns 204 even for an already-gone
+  // artifact, but any non-2xx (auth failure, 5xx, etc.) means the artifact is still
+  // sitting on the relay and callers must not report it as removed (Beta QA finding I2).
+  if (!res.ok) {
+    throw new ApiError(await safeErrorMessage(res), res.status);
+  }
 }
 
 // ---------------------------------------------------------------------------------------

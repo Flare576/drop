@@ -10,7 +10,9 @@
 # (DB_DATABASE / DATA_PATH still need to be added to the Prod environment — see
 # api/config.php.template for what each configures. There is no PUSH_TOKEN secret
 # any more -- the POST team-gate now lives in the allowed_auth DB table, populated
-# manually, not via CI/config.)
+# manually, not via CI/config. config.php is generated via scripts/render-config.php,
+# NOT sed -- sed broke on secrets containing "/" or "&" and could emit invalid PHP
+# for a secret containing "'"; see that script's header for the escaping rationale.)
 
 name: Deploy to flare576.com
 
@@ -46,6 +48,20 @@ jobs:
             exit 0
           fi
 
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+
+      # api/ has no framework/Composer, so there's no PHPUnit suite -- but a bare
+      # `php -l` per file is exactly the gate that would have caught api/drop.php's
+      # syntax error (Beta QA finding C1) before it ever shipped.
+      - name: Lint PHP
+        run: |
+          for f in $(find api -name '*.php'); do
+            php -l "$f"
+          done
+
   build-and-deploy:
     needs: test
     runs-on: ubuntu-latest
@@ -57,14 +73,25 @@ jobs:
       # No bundler/dist step here (unlike ei's Vite build) — web/ is plain
       # static files deployed as-is, and api/ is plain PHP.
 
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+
+      # Renders api/config.php.template with real secrets. NOT `sed` -- a prior sed-based
+      # version broke on any secret containing `/` (DATA_PATH always does) or `&`, and could
+      # emit invalid PHP for a secret containing `'` (Beta QA finding C2). See
+      # scripts/render-config.php for the escaping rationale.
       - name: Generate API config
+        env:
+          DB_HOSTNAME: ${{ secrets.DB_HOST }}
+          DB_DATABASE: ${{ secrets.DB_DATABASE }}
+          DB_USERNAME: ${{ secrets.DB_USERNAME }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          DATA_PATH: ${{ secrets.DATA_PATH }}
         run: |
-          sed -e "s/{{DB_HOSTNAME}}/${{ secrets.DB_HOST }}/" \
-              -e "s/{{DB_DATABASE}}/${{ secrets.DB_DATABASE }}/" \
-              -e "s/{{DB_USERNAME}}/${{ secrets.DB_USERNAME }}/" \
-              -e "s/{{DB_PASSWORD}}/${{ secrets.DB_PASSWORD }}/" \
-              -e "s/{{DATA_PATH}}/${{ secrets.DATA_PATH }}/" \
-              api/config.php.template > api/config.php
+          php scripts/render-config.php api/config.php.template api/config.php
+          php -l api/config.php
 
       - name: Deploy API
         uses: wlixcc/SFTP-Deploy-Action@v1.2.4

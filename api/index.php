@@ -80,17 +80,28 @@ $segments = $remainder === '' ? [] : explode('/', $remainder);
 $userId = $segments[0] ?? '';
 $artifactId = $segments[1] ?? null;
 
-// userId: base64url charset only, reasonable max length (path traversal / injection defense).
+// userId: base64url charset only. MAX_ARTIFACT_ID_LENGTH matches artifact_id's schema
+// column exactly (schema.sql: VARCHAR(64)). MAX_USERID_LENGTH is deliberately much
+// smaller than user_id's own column (VARCHAR(512)) -- it's capped so the WORST CASE
+// relative file_path ("shard/userId/artifactId.json", getRelativeFilePath() in
+// config.php.template) can never exceed file_path's own column (VARCHAR(255)).
+// Without this, a userId near the 512 cap would pass this check, get written to disk in
+// handlePost() (file write happens BEFORE the DB insert), then fail the DB insert on a
+// truncated/rejected file_path value -- leaving a permanent orphan blob no expiry sweep
+// ever finds, since both sweeps enumerate from drop_items, not the filesystem (Beta QA
+// finding I3). 2 (shard) + 1 + 1 (two path separators) + 5 (".json") = 9 bytes of fixed
+// overhead; 255 - 9 - 64 (MAX_ARTIFACT_ID_LENGTH) = 182.
 const ID_PATTERN = '/^[A-Za-z0-9_-]+$/';
-const MAX_ID_LENGTH = 512;
+const MAX_ARTIFACT_ID_LENGTH = 64;
+const MAX_USERID_LENGTH = 182;
 
-if ($userId === '' || strlen($userId) > MAX_ID_LENGTH || !preg_match(ID_PATTERN, $userId)) {
+if ($userId === '' || strlen($userId) > MAX_USERID_LENGTH || !preg_match(ID_PATTERN, $userId)) {
     http_response_code(400);
     echo json_encode(['error' => 'Invalid or missing userId']);
     exit;
 }
 
-if ($artifactId !== null && ($artifactId === '' || strlen($artifactId) > 64 || !preg_match(ID_PATTERN, $artifactId))) {
+if ($artifactId !== null && ($artifactId === '' || strlen($artifactId) > MAX_ARTIFACT_ID_LENGTH || !preg_match(ID_PATTERN, $artifactId))) {
     http_response_code(400);
     echo json_encode(['error' => 'Invalid artifactId']);
     exit;

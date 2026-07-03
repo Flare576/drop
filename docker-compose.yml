@@ -30,6 +30,7 @@ services:
     volumes:
       - ./api:/app/api
       - ./docker/dev-router.php:/app/docker/dev-router.php:ro
+      - ./scripts:/app/scripts:ro
     ports:
       - "8080:8080"
     command: >
