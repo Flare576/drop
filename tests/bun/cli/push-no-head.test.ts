@@ -77,14 +77,17 @@ describe("push.ts in a repo without HEAD", () => {
       expect(request.url).toBe(`${captureServer.baseUrl}/${await generateUserId(PRIMARY_CREDENTIALS)}`);
 
       const encryptedBody = JSON.parse(request.bodyText) as { iv: string; ciphertext: string };
-      const envelopeJson = await decrypt(encryptedBody, PRIMARY_CREDENTIALS);
-      const envelope = JSON.parse(envelopeJson) as { filename: string; patch: string };
+      const plaintextBytes = await decrypt(encryptedBody, PRIMARY_CREDENTIALS);
 
-      expect(envelope.filename).toEndWith(".patch");
-      expect(envelope.patch).toContain("diff --git a/notes/hello.txt b/notes/hello.txt");
-      expect(envelope.patch).toContain("new file mode 100644");
-      expect(envelope.patch).toContain("+++ b/notes/hello.txt");
-      expect(envelope.patch).toContain("+hello from a repo without HEAD");
+      const sep = plaintextBytes.indexOf(0);
+      const header = JSON.parse(new TextDecoder().decode(plaintextBytes.slice(0, sep))) as { filename: string };
+      const patch = new TextDecoder().decode(plaintextBytes.slice(sep + 1));
+
+      expect(header.filename).toEndWith(".patch");
+      expect(patch).toContain("diff --git a/notes/hello.txt b/notes/hello.txt");
+      expect(patch).toContain("new file mode 100644");
+      expect(patch).toContain("+++ b/notes/hello.txt");
+      expect(patch).toContain("+hello from a repo without HEAD");
     } finally {
       await captureServer.stop();
       await repo.destroy();
