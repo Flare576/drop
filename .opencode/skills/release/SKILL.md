@@ -46,16 +46,30 @@ git fetch origin && git status
 ```
 Not on `main`, or behind origin: STOP. Never tag from a branch or a stale checkout.
 
-### Check 3 — Did you update the docs?
+### Check 3 — Docs cross-check (do this yourself; don't just ask)
 
-**Mandatory human pause.** Ask Flare:
+"Did you update the docs?" as a verbal question already failed once — docs got updated
+during the feature work but root `README.md` was never re-checked against the final
+state before the release that shipped it. Do this as an active step, not a question:
 
-> "Did you update the docs? Check README.md, cli/README.md, skills/drop/SKILL.md,
-> skills/drop-diff/SKILL.md, and docs/adr/ for anything stale — new env vars, changed
-> CLI flags, renamed package. If a human (or an agent reading the skill) would be
-> confused without knowing, update it now."
-
-Do not proceed until Flare explicitly confirms docs are current.
+1. Diff every doc file against the last tag to see what's *already* changed:
+   ```bash
+   git diff $(git describe --tags --abbrev=0)..HEAD --stat -- '*.md' 'docs/adr/**'
+   ```
+2. Independently list what actually changed in code since the last tag — new/removed
+   CLI flags, new artifact shapes, renamed package, new skills, changed env vars:
+   ```bash
+   git diff $(git describe --tags --abbrev=0)..HEAD --stat -- cli/ shared/ web/ skills/ package.json
+   ```
+3. Cross-check step 2's list against **every** doc file, one by one, even ones you
+   already touched earlier in the session — `README.md` (root), `cli/README.md`,
+   `api/README.md`, `web/README.md`, `skills/drop/SKILL.md`, `skills/drop-diff/
+   SKILL.md`, and any other `skills/*/SKILL.md`. Root `README.md` is the one most
+   likely to be skipped, since feature work tends to touch the subsystem-specific
+   READMEs directly and never circles back to the top-level overview — check it
+   explicitly, don't assume "I updated docs during the feature" covered it.
+4. Only after that cross-check, tell Flare what you found/fixed. Don't ask an open
+   question and accept a verbal "yeah I think so" as the check passing.
 
 ### Check 4 — Full local test harness (same gate CI runs)
 ```bash
