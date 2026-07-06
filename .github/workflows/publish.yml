@@ -1,10 +1,10 @@
-# Publishes the `f-drop` CLI to npm via OIDC trusted publishing (no stored npm token).
+# Publishes the `drop-f` CLI to npm via OIDC trusted publishing (no stored npm token).
 #
 # One-time manual step before this workflow can ever succeed: npm requires a brand-new
 # package's FIRST version to be published by hand (`npm login` + `npm publish --access
 # public` from a local machine) -- trusted publishing can only be configured for a
 # package that already exists on the registry. After that one manual publish, go to
-# https://www.npmjs.com/package/f-drop/access -> Trusted Publisher -> GitHub Actions,
+# https://www.npmjs.com/package/drop-f/access -> Trusted Publisher -> GitHub Actions,
 # and register this exact repo + workflow filename (publish.yml) before tagging a
 # second release through CI.
 

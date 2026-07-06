@@ -92,12 +92,12 @@ simultaneous staged + unstaged + untracked changes: identical hash both times.
 Three equivalent ways to invoke this, in order of "least setup required":
 
 ```sh
-bunx f-drop                # once published to npm — no local clone needed at all
+bunx drop-f                # once published to npm — no local clone needed at all
 bun run drop/cli/push.ts   # curl'd down standalone (see skills/drop-diff/SKILL.md)
 bun run cli/push.ts        # from inside this repo
 ```
 
-All three run the exact same script — `bunx f-drop` resolves to `cli/push.ts` via the
+All three run the exact same script — `bunx drop-f` resolves to `cli/push.ts` via the
 `bin` field in `package.json`. Requires Bun either way (imports `../shared/crypto.ts`
 directly — no build step, per the project's `shared/crypto.ts` being written to run
 unmodified under Bun).

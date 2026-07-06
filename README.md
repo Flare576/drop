@@ -4,7 +4,7 @@ Zero-knowledge, client-side-encrypted dead-drop relay. Push an artifact (a git d
 today) from one machine, pull and decrypt it on another — the relay never sees
 plaintext, the passphrase, or the derived key.
 
-- `cli/` — Bun-native push CLI (`f-drop` on npm). See `cli/README.md`.
+- `cli/` — Bun-native push CLI (`drop-f` on npm). See `cli/README.md`.
 - `api/` — PHP/MySQL relay, deployed to flare576.com. See `api/README.md`.
 - `web/` — vanilla-JS browser pull UI. See `web/README.md`.
 - `shared/` — crypto module shared by `cli/` (TypeScript) and hand-ported to

@@ -42,7 +42,7 @@ same relative arrangement, wherever you put the `drop/` folder.)
 If the repo is already cloned locally (e.g. this skill is running from inside the
 `drop` project itself), skip the `curl` step and just use `cli/push.ts` directly.
 
-Alternatively, if `f-drop` has been published to npm, `bunx f-drop` runs the exact same
+Alternatively, if `drop-f` has been published to npm, `bunx drop-f` runs the exact same
 script without a local copy at all — check whether that's available before falling back
 to `curl`.
 
@@ -54,7 +54,7 @@ From inside the git repo whose changes should be sent:
 bun run drop/cli/push.ts
 ```
 
-(or `bunx f-drop`, or `bun run cli/push.ts` if working inside the `drop` repo itself.)
+(or `bunx drop-f`, or `bun run cli/push.ts` if working inside the `drop` repo itself.)
 
 ## What happens
 

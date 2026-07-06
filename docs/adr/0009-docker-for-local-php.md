@@ -57,7 +57,7 @@ swept into the production SFTP deploy, which ships `api/` verbatim.
   that table is never seeded from a committed file in the first place).
 - `vroom`'s auto-detection (`configure_type` in the vroom script itself) would default
   this repo to `type=compose` purely because `docker-compose.yml` exists at the root —
-  wrong, since `f-drop`'s primary consumable artifact is the npm package, not the PHP
+  wrong, since `drop-f`'s primary consumable artifact is the npm package, not the PHP
   stack. `.vroom` pins `vroom_type = npm` explicitly and exposes the Docker lifecycle
   as scoped custom targets (`api-lint`, `api-logs`, `api-shell`) plus overridden `run`/
   `stop`/`destroy`, rather than letting auto-detection pick for us.
