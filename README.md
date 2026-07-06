@@ -1,8 +1,8 @@
 # drop
 
-Zero-knowledge, client-side-encrypted dead-drop relay. Push an artifact (a git diff,
-today) from one machine, pull and decrypt it on another — the relay never sees
-plaintext, the passphrase, or the derived key.
+Zero-knowledge, client-side-encrypted dead-drop relay. Push an artifact — a git diff,
+or the raw bytes of any file — from one machine, pull and decrypt it on another — the
+relay never sees plaintext, the passphrase, or the derived key.
 
 ## Installing the CLI
 
@@ -26,8 +26,9 @@ export DROP_AUTH=team-shared-code-word
 ```
 
 See `cli/README.md` for exactly how these are used (derivation, precedence vs CLI
-flags, where to store them) and `skills/drop-diff/SKILL.md` for the agent-facing
-version of this same setup.
+flags, where to store them), how `--install` places the agent-facing skills below onto
+this machine, and `skills/drop-diff/SKILL.md`/`skills/drop-file/SKILL.md` for the
+agent-facing version of pushing.
 
 ## Layout
 
@@ -36,7 +37,8 @@ version of this same setup.
 - `web/` — vanilla-JS browser pull UI. See `web/README.md`.
 - `shared/` — crypto module shared by `cli/` (TypeScript) and hand-ported to
   `web/crypto.js` (browsers can't run `.ts`).
-- `skills/` — `drop`/`drop-diff`, the agent-facing docs coding harnesses actually read.
+- `skills/` — `drop`/`drop-diff`/`drop-file`, the agent-facing docs coding harnesses
+  actually read.
 - `docs/adr/` — architecture decision records; read these before changing behavior
   that looks arbitrary. It probably isn't.
 
@@ -60,6 +62,7 @@ ever exists inside the throwaway container, never touches the real database.
 Other targets:
 
 ```sh
+vroom test        # bring up the stack (waits healthy) and run the full test:all suite
 vroom api-lint    # php -l across every file in api/, no DB needed
 vroom api-logs    # tail the api container's log
 vroom api-shell   # shell into the api container
