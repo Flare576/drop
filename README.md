@@ -4,6 +4,33 @@ Zero-knowledge, client-side-encrypted dead-drop relay. Push an artifact (a git d
 today) from one machine, pull and decrypt it on another — the relay never sees
 plaintext, the passphrase, or the derived key.
 
+## Installing the CLI
+
+```sh
+npm install -g drop-f   # or: bunx drop-f (no install, runs the latest published version each time)
+```
+
+`npm install -g drop-f` (or the local `bunx drop-f` form) installs **only the push
+side** — the `push.ts` CLI that encrypts and sends an artifact. It does not touch or
+require `api/`, `web/`, or any local server; those exist purely so *this repo's*
+maintainer can run/deploy the relay itself. Installing the CLI package elsewhere never
+pulls in the API or web code.
+
+Before running it, three environment variables must be set — the CLI fails immediately
+with a named list of whatever's missing rather than attempting a partial push:
+
+```sh
+export DROP_USERNAME=your-username
+export DROP_PASSPHRASE="a long random passphrase, not a real password"
+export DROP_AUTH=team-shared-code-word
+```
+
+See `cli/README.md` for exactly how these are used (derivation, precedence vs CLI
+flags, where to store them) and `skills/drop-diff/SKILL.md` for the agent-facing
+version of this same setup.
+
+## Layout
+
 - `cli/` — Bun-native push CLI (`drop-f` on npm). See `cli/README.md`.
 - `api/` — PHP/MySQL relay, deployed to flare576.com. See `api/README.md`.
 - `web/` — vanilla-JS browser pull UI. See `web/README.md`.
