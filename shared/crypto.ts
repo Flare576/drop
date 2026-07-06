@@ -78,12 +78,13 @@ export async function generateUserId(credentials: CryptoCredentials): Promise<st
     .replace(/=/g, "");
 }
 
-export async function encrypt(data: string, credentials: CryptoCredentials): Promise<EncryptedPayload> {
+/** Encrypts raw bytes. Caller is responsible for any higher-level envelope (e.g. filename headers) — this only ever sees opaque plaintext bytes. */
+export async function encrypt(data: Uint8Array, credentials: CryptoCredentials): Promise<EncryptedPayload> {
   const key = await deriveKey(credentials);
   const iv = new Uint8Array(12);
   crypto.getRandomValues(iv);
 
-  const ciphertext = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(data));
+  const ciphertext = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, data as NodeJS.BufferSource);
 
   return {
     iv: uint8ArrayToBase64(iv),
@@ -91,7 +92,8 @@ export async function encrypt(data: string, credentials: CryptoCredentials): Pro
   };
 }
 
-export async function decrypt(payload: EncryptedPayload, credentials: CryptoCredentials): Promise<string> {
+/** Decrypts back to raw bytes. Caller is responsible for parsing any higher-level envelope out of the result. */
+export async function decrypt(payload: EncryptedPayload, credentials: CryptoCredentials): Promise<Uint8Array> {
   const key = await deriveKey(credentials);
 
   const iv = Uint8Array.from(atob(payload.iv), (c) => c.charCodeAt(0));
@@ -99,5 +101,5 @@ export async function decrypt(payload: EncryptedPayload, credentials: CryptoCred
 
   const decrypted = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, ciphertext);
 
-  return new TextDecoder().decode(decrypted);
+  return new Uint8Array(decrypted);
 }

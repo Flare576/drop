@@ -11,7 +11,13 @@
  *
  * Usage:
  *   bun run cli/push.ts [--filename <name>] [--username <u>] [--passphrase <p>]
- *                        [--drop-auth <code>] [--api-base <url>]
+ *                        [--drop-auth <code>] [--api-base <url>] [--input <path>]
+ *   bun run cli/push.ts --install
+ *
+ * By default, pushes a git working-tree diff. Pass --input <path> to push the raw
+ * bytes of a file instead (any content, not just a diff — pushed as-is, even if
+ * empty). Pass --install to copy this package's skills/ into detected coding-harness
+ * skill directories and exit; no network, git, or crypto is touched in that mode.
  *
  * Config precedence (highest wins): CLI flags > environment variables > config file
  * at ~/.doNotCommit.d/.doNotCommit.droprelay (KEY=value or `export KEY=value` lines,
@@ -21,6 +27,7 @@
 import { homedir } from "node:os";
 import { join, basename } from "node:path";
 import { generateUserId, encrypt, type CryptoCredentials } from "../shared/crypto.ts";
+import { runInstall } from "./install.ts";
 
 const CONFIG_FILE = join(homedir(), ".doNotCommit.d", ".doNotCommit.droprelay");
 const DEFAULT_API_BASE = "https://flare576.com/drop/api";
@@ -35,6 +42,7 @@ interface CliFlags {
   passphrase?: string;
   dropAuth?: string;
   apiBase?: string;
+  input?: string;
 }
 
 function parseArgs(argv: string[]): CliFlags {
@@ -45,6 +53,7 @@ function parseArgs(argv: string[]): CliFlags {
     "--passphrase": "passphrase",
     "--drop-auth": "dropAuth",
     "--api-base": "apiBase",
+    "--input": "input",
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -221,44 +230,70 @@ function formatDuration(totalSeconds: number): string {
 // ---------------------------------------------------------------------------------
 
 async function main(): Promise<void> {
+  if (process.argv.slice(2).includes("--install")) {
+    await runInstall();
+    process.exit(0);
+  }
+
   const flags = parseArgs(process.argv.slice(2));
   const config = await resolveConfig(flags);
   const credentials = requireCredentials(config);
 
-  // Confirm we're in a git repo and get its top-level dir + basename for the
-  // default filename, before touching the index at all.
-  let repoRoot: string;
-  try {
-    repoRoot = (await Bun.$`git rev-parse --show-toplevel`.quiet().text()).trim();
-  } catch {
-    console.error("push.ts: not inside a git repository (git rev-parse --show-toplevel failed)");
-    process.exit(1);
+  let content: Uint8Array;
+  let defaultFilename: string;
+
+  if (flags.input) {
+    // Explicit user intent: push exactly what's in the file, regardless of size —
+    // unlike diff mode, there is no "nothing to push" ambiguity to short-circuit on.
+    const inputFile = Bun.file(flags.input);
+    if (!(await inputFile.exists())) {
+      console.error(`push.ts: --input file not found: ${flags.input}`);
+      process.exit(1);
+    }
+    content = new Uint8Array(await inputFile.arrayBuffer());
+    defaultFilename = basename(flags.input);
+  } else {
+    // Confirm we're in a git repo and get its top-level dir + basename for the
+    // default filename, before touching the index at all.
+    let repoRoot: string;
+    try {
+      repoRoot = (await Bun.$`git rev-parse --show-toplevel`.quiet().text()).trim();
+    } catch {
+      console.error("push.ts: not inside a git repository (git rev-parse --show-toplevel failed)");
+      process.exit(1);
+    }
+
+    let patch: string;
+    try {
+      patch = await captureDiff(repoRoot);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(`push.ts: failed to compute git diff: ${message}`);
+      process.exit(1);
+    }
+
+    if (patch.trim() === "") {
+      console.log("Nothing to push (no working tree changes)");
+      process.exit(0);
+    }
+
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    defaultFilename = `${basename(repoRoot)}-${timestamp}.patch`;
+    content = new TextEncoder().encode(patch);
   }
 
-  let patch: string;
-  try {
-    patch = await captureDiff(repoRoot);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.error(`push.ts: failed to compute git diff: ${message}`);
-    process.exit(1);
-  }
+  const filename = flags.filename ?? defaultFilename;
 
-  if (patch.trim() === "") {
-    console.log("Nothing to push (no working tree changes)");
-    process.exit(0);
-  }
-
-  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const filename = flags.filename ?? `${basename(repoRoot)}-${timestamp}.patch`;
-
-  const envelope = JSON.stringify({ filename, patch });
+  // Envelope: JSON header (filename) + NUL delimiter + raw content, all as one
+  // Uint8Array — see shared/crypto.ts for why this lives here, not in crypto.ts.
+  const header = new TextEncoder().encode(JSON.stringify({ filename }) + "\0");
+  const plaintext = Buffer.concat([header, content]);
 
   let userId: string;
   let encrypted: { iv: string; ciphertext: string };
   try {
     userId = await generateUserId(credentials);
-    encrypted = await encrypt(envelope, credentials);
+    encrypted = await encrypt(plaintext, credentials);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error(`push.ts: encryption failed: ${message}`);
