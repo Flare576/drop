@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { stat } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -66,6 +67,16 @@ async function decryptEnvelope(bodyText: string): Promise<{ filename: string; co
   const content = plaintextBytes.slice(sep + 1);
 
   return { filename: header.filename, content };
+}
+
+/** True if `path` exists on disk, false on ENOENT or any other stat failure. */
+async function pathExists(path: string): Promise<boolean> {
+  try {
+    await stat(path);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 describe("push.ts --input", () => {
@@ -156,6 +167,58 @@ describe("push.ts --input", () => {
       const envelope = await decryptEnvelope(captureServer.requests[0].bodyText);
       expect(envelope.filename).toBe("empty.bin");
       expect(envelope.content.length).toBe(0);
+    } finally {
+      await captureServer.stop();
+      await repo.destroy();
+    }
+  });
+
+  it("pushes a file literally named --install via --input without ever entering installer mode", async () => {
+    const repo = await TempRepo.create("drop-push-input-");
+    const captureServer = await startCaptureServer();
+
+    try {
+      await repo.write("--install", "not actually the installer flag\n");
+
+      // Pass the literal relative filename, not an absolute path, so argv contains
+      // the exact bare token "--install" — the precise shape of the original repro
+      // (`--input --install`), not merely a longer string that happens to end with it.
+      const result = await runPush(repo.dir, captureServer.baseUrl, ["--input", "--install"]);
+
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain("Push succeeded:");
+      expect(captureServer.requests).toHaveLength(1);
+
+      const envelope = await decryptEnvelope(captureServer.requests[0].bodyText);
+      expect(envelope.filename).toBe("--install");
+
+      // If "--install" had been re-parsed as the installer flag instead of consumed
+      // as --input's value, main() would have returned before ever pushing, and
+      // runInstall() would have created this directory under the scratch HOME.
+      expect(await pathExists(join(repo.dir, ".claude", "skills"))).toBe(false);
+    } finally {
+      await captureServer.stop();
+      await repo.destroy();
+    }
+  });
+
+  it("treats --install as --filename's value, not the installer flag, in `--filename --install`", async () => {
+    const repo = await TempRepo.create("drop-push-input-");
+    const captureServer = await startCaptureServer();
+
+    try {
+      const inputPath = join(repo.dir, "source.txt");
+      await repo.write("source.txt", "hello from --filename --install\n");
+
+      const result = await runPush(repo.dir, captureServer.baseUrl, ["--input", inputPath, "--filename", "--install"]);
+
+      expect(result.exitCode).toBe(0);
+      expect(captureServer.requests).toHaveLength(1);
+
+      const envelope = await decryptEnvelope(captureServer.requests[0].bodyText);
+      expect(envelope.filename).toBe("--install");
+
+      expect(await pathExists(join(repo.dir, ".claude", "skills"))).toBe(false);
     } finally {
       await captureServer.stop();
       await repo.destroy();

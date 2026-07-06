@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { readdir, stat } from "node:fs/promises";
+import { chmod, readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -76,6 +76,29 @@ describe("push.ts --install", () => {
       // No OpenCode marker file existed, so its skills dir must never be created.
       expect(await pathExists(join(scratchHome.dir, ".config", "opencode", "skills"))).toBe(false);
     } finally {
+      await captureServer.stop();
+      await scratchHome.destroy();
+    }
+  });
+
+  it("exits non-zero and reports the Claude Code failure when an attempted install step fails", async () => {
+    const scratchHome = await TempRepo.create("drop-push-install-fail-");
+    const captureServer = await startCaptureServer();
+
+    try {
+      // No write permission on the scratch HOME itself — Claude Code's unconditional
+      // mkdir(~/.claude/skills) fails with EACCES since it can't even create ~/.claude.
+      await chmod(scratchHome.dir, 0o500);
+
+      const result = await runInstall(scratchHome.dir, captureServer.baseUrl);
+
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain("Claude Code");
+      expect(captureServer.requests).toHaveLength(0);
+    } finally {
+      // Restore write permission before destroy()'s recursive rm runs, or cleanup
+      // itself fails on the still-read-only directory.
+      await chmod(scratchHome.dir, 0o700);
       await captureServer.stop();
       await scratchHome.destroy();
     }
