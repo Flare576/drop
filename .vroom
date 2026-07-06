@@ -23,6 +23,10 @@ run:
 stop:
 	docker compose stop
 
+test:
+	docker compose up -d --wait
+	npm run test:all
+
 watch:
 	echo 'Why not watch a 🥃'
 

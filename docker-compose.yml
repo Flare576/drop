@@ -23,7 +23,9 @@ services:
       retries: 15
 
   api:
-    image: php:8.3-cli-alpine
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
     depends_on:
       db:
         condition: service_healthy
@@ -40,6 +42,9 @@ services:
       # exercise (or catch a regression in) the rate-limit race fix (Beta QA finding
       # I5). PHP_CLI_SERVER_WORKERS (7.4+) spawns real worker processes instead.
       PHP_CLI_SERVER_WORKERS: "8"
-    command: >
-      sh -c "docker-php-ext-install pdo_mysql
-      && php -S 0.0.0.0:8080 -t /app/api /app/docker/dev-router.php"
+    command: php -S 0.0.0.0:8080 -t /app/api /app/docker/dev-router.php
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/drop/api/probe-user"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
