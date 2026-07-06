@@ -149,6 +149,29 @@ describe("push.ts --input", () => {
     }
   });
 
+  it("exits 1 with a clear message and never falls through to diff mode when --input= is empty", async () => {
+    const repo = await TempRepo.create("drop-push-input-");
+    const captureServer = await startCaptureServer();
+
+    try {
+      // Real uncommitted changes present, so if this ever silently fell through to
+      // diff mode instead of failing fast on the empty --input value, there would be
+      // something for that diff mode to push — making a false "success" observable.
+      await repo.write("tracked.txt", "uncommitted change\n");
+
+      // Exact CLI shape: an inline `--input=` with nothing after the `=`, not
+      // `--input` followed by a separate empty-string argv entry.
+      const result = await runPush(repo.dir, captureServer.baseUrl, ["--input="]);
+
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain("push.ts: --input requires a non-empty file path");
+      expect(captureServer.requests).toHaveLength(0);
+    } finally {
+      await captureServer.stop();
+      await repo.destroy();
+    }
+  });
+
   it("still pushes a 0-byte --input file instead of skipping with 'Nothing to push'", async () => {
     const repo = await TempRepo.create("drop-push-input-");
     const captureServer = await startCaptureServer();
