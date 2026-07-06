@@ -134,6 +134,13 @@ the skill markdown somewhere a harness can find it. No network, git, or crypto i
 touched in this mode — see
 `docs/adr/0010-byte-native-envelope-and-input-flow.md`.
 
+If a skill is ever retired from `skills/`, its name is added to `DEPRECATED_SKILL_NAMES`
+in `cli/install.ts` in the same commit — that static, developer-maintained list is the
+only thing that ever removes a previously-installed skill from a target directory.
+`installSkillsTo()` deliberately never infers removal candidates from runtime state
+(a manifest, a diff against current source) — see
+`docs/adr/0011-static-deprecated-skill-list.md` for why.
+
 ## Filename labeling (optional)
 
 `push.ts` never branches on who or what invoked it — there's no `--harness` flag. If

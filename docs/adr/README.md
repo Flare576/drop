@@ -15,3 +15,4 @@ Consequences. Not a full MADR template; this is a personal-scale project.
 8. [Isolated SFTP account + database per app](0008-isolated-infra-per-app.md)
 9. [Docker for local PHP tooling, not a host install](0009-docker-for-local-php.md)
 10. [Byte-native envelope, generalized artifact shape, `--install`](0010-byte-native-envelope-and-input-flow.md)
+11. [Static deprecated-skill list, never dynamic diffing, for install cleanup](0011-static-deprecated-skill-list.md)
