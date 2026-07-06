@@ -196,7 +196,7 @@ function renderList(items) {
 }
 
 function triggerDownload(filename, contents) {
-  const blob = new Blob([contents], { type: 'text/plain' });
+  const blob = new Blob([contents]);
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -234,36 +234,40 @@ async function handleDownload(artifactId, btn) {
   try {
     const payload = await fetchArtifact(artifactId);
 
-    let plaintext;
+    let plaintextBytes;
     try {
-      plaintext = await decrypt(payload, creds);
+      plaintextBytes = await decrypt(payload, creds);
     } catch {
       throw new ApiError('Decryption failed — check your username and passphrase.', 0);
     }
 
-    let parsed;
+    const sep = plaintextBytes.indexOf(0);
+    let header;
     try {
-      parsed = JSON.parse(plaintext);
+      header = sep === -1 ? null : JSON.parse(new TextDecoder().decode(plaintextBytes.slice(0, sep)));
     } catch {
-      throw new ApiError('Decrypted artifact was not valid JSON.', 0);
+      header = null;
     }
 
-    if (!parsed || typeof parsed.filename !== 'string' || typeof parsed.patch !== 'string') {
-      throw new ApiError('Decrypted artifact is missing filename or patch content.', 0);
+    if (!header || typeof header.filename !== 'string') {
+      throw new ApiError('Decrypted artifact is missing a valid filename header.', 0);
     }
 
-    triggerDownload(parsed.filename, parsed.patch);
-    setStatus(`Downloaded "${parsed.filename}".`, 'success');
+    const filename = header.filename;
+    const content = plaintextBytes.slice(sep + 1);
 
-    const shouldDelete = confirm(`Downloaded "${parsed.filename}". Delete it from the server now?`);
+    triggerDownload(filename, content);
+    setStatus(`Downloaded "${filename}".`, 'success');
+
+    const shouldDelete = confirm(`Downloaded "${filename}". Delete it from the server now?`);
     if (shouldDelete) {
       await deleteArtifact(artifactId);
       await refreshList();
-      setStatus(`Deleted "${parsed.filename}" from the server.`, 'success');
+      setStatus(`Deleted "${filename}" from the server.`, 'success');
       return;
     }
 
-    setStatus(`Left "${parsed.filename}" on the server (not deleted).`);
+    setStatus(`Left "${filename}" on the server (not deleted).`);
     btn.disabled = false;
     btn.textContent = originalText;
   } catch (err) {

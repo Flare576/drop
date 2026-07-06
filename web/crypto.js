@@ -74,7 +74,7 @@ export async function encrypt(data, credentials) {
   const iv = new Uint8Array(12);
   crypto.getRandomValues(iv);
 
-  const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, new TextEncoder().encode(data));
+  const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, data);
 
   return {
     iv: uint8ArrayToBase64(iv),
@@ -90,5 +90,5 @@ export async function decrypt(payload, credentials) {
 
   const decrypted = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ciphertext);
 
-  return new TextDecoder().decode(decrypted);
+  return new Uint8Array(decrypted);
 }
