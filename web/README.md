@@ -89,11 +89,13 @@ php -S localhost:8081 index.php
   headless browser.
 - Full encrypt → decrypt round trip against ciphertext **not** produced by this UI: a
   throwaway script imported `../shared/crypto.ts` directly under Bun (which runs TS
-  natively) to independently derive a userId and encrypt a `{filename, patch}` payload.
-  That `{iv, ciphertext}` was served to the real `index.html`/`app.js`/`crypto.js` running
-  in a headless browser (via a local mock of the list/get/delete endpoints), which
-  downloaded, decrypted, and saved a file to disk whose contents were byte-for-byte
-  identical to the original plaintext produced by the independent script.
+  natively) to independently derive a userId and encrypt a header+content envelope (a
+  JSON `{"filename": "..."}` header, a null byte, then raw content bytes — see
+  `docs/adr/0010-byte-native-envelope-and-input-flow.md`). That `{iv, ciphertext}` was
+  served to the real `index.html`/`app.js`/`crypto.js` running in a headless browser
+  (via a local mock of the list/get/delete endpoints), which downloaded, decrypted, and
+  saved a file to disk whose contents were byte-for-byte identical to the original
+  content bytes produced by the independent script.
 - Empty list, 404 (expired/already-consumed artifact), and network-unreachable-server cases
   all render a visible, non-generic status message — no silent failures.
 - Captured every network request made by the page (list, get-one, delete) and confirmed

@@ -28,9 +28,11 @@ guarantee.
    client-side via PBKDF2 and marked `extractable: false` in the Web Crypto API — it
    cannot be exported even by a compromised caller in the same JS context, let alone sent
    over the network.
-3. **Filenames are inside the envelope, not metadata.** The encrypted plaintext is
-   `{"filename": "...", "patch": "<git diff text>"}` as a single JSON string. This API
-   only ever sees the ciphertext of that whole blob — it cannot report or log a filename it
+3. **Filenames are inside the envelope, not metadata.** The encrypted plaintext is a
+   small JSON header (`{"filename": "..."}`) followed by a null byte and the raw
+   content bytes — not fixed to any one artifact shape (a git diff, a zip, an arbitrary
+   file); see `docs/adr/0010-byte-native-envelope-and-input-flow.md`. This API only
+   ever sees the ciphertext of that whole blob — it cannot report or log a filename it
    never had. The only server-observable metadata is what's inherent to opaque bytes:
    `artifactId` (server-generated UUID), `createdAt`/`expiresAt` (server clock), and
    `sizeBytes` (ciphertext byte length).

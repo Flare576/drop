@@ -1,12 +1,12 @@
 # push.ts
 
-Standalone Bun CLI that encrypts a git working-tree diff and pushes it to the drop
-relay, so a coding harness running on unrestricted hardware can hand a diff to a
-locked-down client VDI's browser to pull down later. It has **zero knowledge of
-which harness invoked it** — a coding agent calls it directly (see
-`skills/drop-diff/SKILL.md`) when it decides a push is warranted, or a human runs it
-by hand. There is no automatic/background trigger; see
-`docs/adr/0003-skills-over-hooks.md` for why.
+Standalone Bun CLI that pushes an artifact — a git working-tree diff by default, or the
+raw bytes of any file via `--input` — through the drop relay, so a coding harness
+running on unrestricted hardware can hand it to a locked-down client VDI's browser to
+pull down later. It has **zero knowledge of which harness invoked it** — a coding
+agent calls it directly (see `skills/drop-diff/SKILL.md` and `skills/drop-file/
+SKILL.md`) when it decides a push is warranted, or a human runs it by hand. There is
+no automatic/background trigger; see `docs/adr/0003-skills-over-hooks.md` for why.
 
 ## Setup: credentials file
 
@@ -47,20 +47,29 @@ there is no silent partial attempt.
 
 ## What it does
 
-1. Confirms the cwd is inside a git repo (`git rev-parse --show-toplevel`).
-2. Computes a full working-tree diff against `HEAD` — staged, unstaged, *and*
-   untracked files, binary-safe — without leaving any trace in the real index or
-   working tree.
-3. If the diff is empty, logs `Nothing to push (no working tree changes)` and exits
-   `0` without any network call.
-4. Builds the envelope `{filename, patch}`. `filename` defaults to
-   `<repo-basename>-<ISO8601 timestamp>.patch` (colons/dots sanitized to dashes) or
-   uses `--filename <name>` if given. The relay never sees `filename` — it's inside
+By default, computes and pushes a git working-tree diff. Pass `--input <path>` to push
+the raw bytes of a file instead.
+
+1. **Diff mode** (default): confirms the cwd is inside a git repo (`git rev-parse
+   --show-toplevel`), then computes a full working-tree diff against `HEAD` — staged,
+   unstaged, *and* untracked files, binary-safe — without leaving any trace in the
+   real index or working tree. If the diff is empty, logs `Nothing to push (no working
+   tree changes)` and exits `0` without any network call.
+   **`--input <path>` mode**: never touches git. Reads the raw bytes of `<path>`
+   instead. Always pushes, even if the file is empty — an explicit `--input` is
+   unambiguous intent, unlike an unchanged working tree. Fails fast with a named error
+   (`push.ts: --input file not found: <path>`) and exits `1` if `<path>` doesn't exist.
+2. Builds the envelope: a small JSON header (`{"filename": "..."}`) followed by a
+   single null byte, followed by the raw content bytes (the diff, UTF-8 encoded, or the
+   input file's bytes as-is) — see `docs/adr/0010-byte-native-envelope-and-input-flow.md`
+   for why it's shaped this way. `filename` defaults to `<repo-basename>-<ISO8601
+   timestamp>.patch` (diff mode) or the input path's basename (`--input` mode), either
+   overridable via `--filename <name>`. The relay never sees `filename` — it's inside
    the encrypted blob.
-5. Derives the userId and AES-GCM key from the credentials, encrypts the envelope,
-   and `POST`s `{iv, ciphertext}` to `${DROP_API_BASE}/${userId}` with header
+3. Derives the userId and AES-GCM key from the credentials, encrypts the envelope
+   bytes, and `POST`s `{iv, ciphertext}` to `${DROP_API_BASE}/${userId}` with header
    `X-Drop-Auth: <code>`.
-6. Reports the result: a success receipt (`artifactId` + `expiresAt`), or a specific
+4. Reports the result: a success receipt (`artifactId` + `expiresAt`), or a specific
    actionable error for 403 (unrecognized team-gate code), 429 (rate limited, with a
    human-readable retry time), 400 (malformed body — a bug in this script, not your
    config), or a network failure — never a raw stack trace. Exit code is non-zero on
@@ -81,7 +90,8 @@ writing. Verified via `shasum .git/index` before/after against a repo with
 simultaneous staged + unstaged + untracked changes: identical hash both times.
 
 ```
---filename <name>   Override the derived patch filename
+--filename <name>   Override the derived filename
+--input <path>      Push this file's raw bytes instead of computing a git diff
 --username <u>      Overrides DROP_USERNAME
 --passphrase <p>    Overrides DROP_PASSPHRASE
 --drop-auth <code>  Overrides DROP_AUTH
@@ -106,6 +116,23 @@ unmodified under Bun).
 See `skills/drop/SKILL.md` and `skills/drop-diff/SKILL.md` for the model-facing version
 of this doc — a coding agent invoking this on a user's behalf reads those, not this
 file, to decide when and how to call `push.ts`.
+
+## Installing skills (`--install`)
+
+```sh
+bunx drop-f --install
+```
+
+Copies this package's `skills/` (currently `drop`, `drop-diff`, `drop-file`) into every
+detected coding harness's skill-discovery directory on this machine — Claude Code
+(`~/.claude/skills/`, always attempted), OMP (`~/.omp/agent/skills/`, only if an OMP
+install is detected), and OpenCode (`~/.config/opencode/skills/`, only if an OpenCode
+install is detected). This is the *only* thing installing this package needs to
+accomplish — `push.ts` itself needs no persistent client-side state to run (`bunx
+drop-f` works standalone every time), so the sole job of an "install" step is getting
+the skill markdown somewhere a harness can find it. No network, git, or crypto is
+touched in this mode — see
+`docs/adr/0010-byte-native-envelope-and-input-flow.md`.
 
 ## Filename labeling (optional)
 
