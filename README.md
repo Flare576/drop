@@ -6,6 +6,10 @@ relay never sees plaintext, the passphrase, or the derived key.
 
 ## Running `drop-f`
 
+**Requires [Bun](https://bun.sh)** — install with `curl -fsSL https://bun.sh/install | bash`
+if you don't already have it. `push.ts` uses Bun-only APIs internally, not just Bun as
+a convenient TypeScript-without-a-build-step runtime, so this isn't optional.
+
 ```sh
 bunx drop-f
 ```
@@ -14,8 +18,7 @@ There is nothing to install for the CLI itself — `bunx drop-f` fetches and run
 `push.ts` directly, every time, always the latest published version. It's the
 **only** thing `push.ts` needs on a machine to work; it doesn't touch or require
 `api/`, `web/`, or any local server (those exist purely so *this repo's* maintainer
-can run/deploy the relay itself). This requires Bun on `PATH` — `push.ts` uses
-Bun-only APIs internally, not just a `.ts`-file convenience.
+can run/deploy the relay itself).
 
 (`npm install -g drop-f` also technically works, since npm just wires up a `drop-f`
 command pointing at the same file — its own `#!/usr/bin/env bun` shebang is what
