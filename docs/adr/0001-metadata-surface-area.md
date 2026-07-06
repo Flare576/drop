@@ -14,8 +14,9 @@ What actually is server-visible, per `api/drop.php` (`handlePost`/`handleGetList
 `artifactId` (server-generated UUID), `createdAt`/`expiresAt` (server clock, not
 client-supplied), and `sizeBytes` (`strlen($data['ciphertext'])` — literal ciphertext
 byte count). `filename` is deliberately **not** metadata — it lives inside the
-encrypted envelope (`{"filename": ..., "patch": ...}`), so the server can't report or
-log a value it never had.
+encrypted envelope (a JSON header `{"filename": "..."}` followed by a null byte and
+the raw content bytes — see ADR 0010), so the server can't report or log a value it
+never had.
 
 ## Decision
 Accept that push timing, push frequency, and rough artifact size are observable to
