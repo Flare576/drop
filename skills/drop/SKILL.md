@@ -36,16 +36,22 @@ corporate VDI. `drop` is the bridge.
 
 ## Concrete flows
 
-Right now there is one concrete implementation of the push side: **`drop-diff`** — a
-git working-tree diff, pushed via a small CLI. If you're helping a user get git changes
-to another machine, see `skill://drop-diff` for the actual mechanics (what to run, what
-env vars are needed, what the output looks like).
+Two concrete implementations of the push side exist:
 
-Other artifact shapes (a standalone file, a zip of multiple files, a generated document)
-are not yet implemented as their own sub-skill, but would follow the same shape: encrypt
-locally, push to the same relay API, same auth model. If the user needs one of these and
-it doesn't exist yet, that's new work, not a documented flow — say so rather than
-guessing at unbuilt behavior.
+- **`drop-diff`** — pushes the current git working-tree diff (staged, unstaged, and
+  untracked changes). Use this when the user is happy with their current uncommitted
+  changes and just wants to hand them off as-is. See `skill://drop-diff` for the actual
+  mechanics (what to run, what env vars are needed, what the output looks like).
+- **`drop-file`** — pushes the raw bytes of an arbitrary existing file (a zip, a build
+  output, a single generated document, a config bundle) that isn't a git diff. Use this
+  when the user wants to send a specific existing artifact rather than "my current
+  changes." See `skill://drop-file` for the actual mechanics.
+
+Both are the same underlying script and follow the same shape: encrypt locally, push to
+the same relay API, same auth model, same env vars — they differ only in what bytes get
+captured before encryption. If the user needs an artifact shape neither of these covers,
+that's new work, not a documented flow — say so rather than guessing at unbuilt
+behavior.
 
 ## What you do NOT need to do
 
