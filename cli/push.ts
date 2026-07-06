@@ -255,9 +255,16 @@ async function main(): Promise<void> {
   let content: Uint8Array;
   let defaultFilename: string;
 
-  if (flags.input) {
+  if (flags.input !== undefined) {
     // Explicit user intent: push exactly what's in the file, regardless of size —
     // unlike diff mode, there is no "nothing to push" ambiguity to short-circuit on.
+    // Checked as presence, not truthiness — `--input=` (an explicitly-passed but
+    // empty value) must still land here and fail loudly, not silently fall through
+    // to diff mode and push the wrong artifact entirely.
+    if (flags.input.trim() === "") {
+      console.error("push.ts: --input requires a non-empty file path");
+      process.exit(1);
+    }
     const inputFile = Bun.file(flags.input);
     if (!(await inputFile.exists())) {
       console.error(`push.ts: --input file not found: ${flags.input}`);

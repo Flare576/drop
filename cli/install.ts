@@ -1,19 +1,25 @@
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
-import { cp, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { cp, mkdir, readdir, rm, stat } from "node:fs/promises";
 
 /**
- * Filename (not a skill name — never matches a real skill directory) recording
- * which skill names THIS package installed into a given targetDir on a prior
- * run. Shared skill-discovery directories (`~/.claude/skills/`, etc.) can hold
- * other tools' skills too (e.g. `ei` installs into these exact same paths) —
- * without this manifest, cleaning up a skill drop-f itself removed from a
- * later version would have no safe way to distinguish "mine, now stale" from
- * "not mine, leave alone." Only names ever recorded here by this function are
- * ever candidates for removal.
+ * Skill names drop-f has shipped and later retired. When a skill is removed
+ * from skills/, add its name here in the SAME commit — this is the ONLY
+ * mechanism that ever removes a previously-installed skill from a target
+ * directory. installSkillsTo() deliberately never infers removal candidates
+ * from runtime state (a written manifest, a diff against current source,
+ * etc.) — a prior version tried exactly that and had two real bugs as a
+ * result: an unvalidated manifest entry could `rm` outside targetDir via
+ * path traversal, and a transient source-read failure got misread as "the
+ * skill was removed," silently wiping an install that never actually failed.
+ * A static, developer-committed list can't be corrupted or traversed at
+ * runtime, and a source-read failure now only ever means "installed nothing
+ * this run" — it can never trigger a deletion.
  */
-const MANIFEST_FILENAME = ".drop-f-skills.json";
+const DEPRECATED_SKILL_NAMES: readonly string[] = [
+  // e.g. "old-skill-name",
+];
 
 /**
  * Copy every skills/<name>/ directory from drop-f's own package into a
@@ -22,9 +28,9 @@ const MANIFEST_FILENAME = ".drop-f-skills.json";
  * silently on upgrade/uninstall, and Windows symlinks need elevated
  * permissions. Generic over whatever exists under skills/ — adding a new
  * drop-f-shipped skill later requires zero changes here. Overwrites
- * unconditionally on every run, and removes any skill THIS function
- * previously installed into targetDir that source no longer has (tracked via
- * `MANIFEST_FILENAME`, never by diffing targetDir's full contents — see above).
+ * unconditionally on every run. Removing a skill entirely from target is
+ * handled ONLY via `DEPRECATED_SKILL_NAMES` above, never by comparing
+ * against current source contents — see that constant's comment for why.
  *
  * `sourceDir` defaults to drop-f's own packaged skills/ (resolved relative
  * to this file's own location, so it works regardless of install method —
@@ -55,36 +61,20 @@ export async function installSkillsTo(targetDir: string, sourceDir?: string): Pr
       skillNames = entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name);
     }
   } catch {
-    // From-source checkout or a package build that predates this feature —
-    // no skills to install, but still fall through to reconcile any stale
-    // manifest entries below (source having vanished entirely is the same
-    // "no longer present" signal as one skill within it disappearing).
+    // Source unreadable or missing this run — that's not evidence a skill
+    // was intentionally removed, so it must never drive a deletion. It only
+    // means nothing gets copied THIS run; DEPRECATED_SKILL_NAMES below is
+    // the sole removal path, entirely decoupled from source-read success.
   }
 
-  const manifestPath = join(targetDir, MANIFEST_FILENAME);
-  let previouslyInstalled: string[] = [];
-  try {
-    previouslyInstalled = JSON.parse(await readFile(manifestPath, "utf8"));
-  } catch {
-    // No manifest yet — first run against this targetDir, or a targetDir
-    // that predates this manifest mechanism. Nothing to reconcile against.
+  // `basename()` strips any `/`/`..` segments before use — belt-and-suspenders
+  // against a future typo'd entry in the static list above, even though (unlike
+  // the manifest this replaced) nothing here is runtime/attacker-controlled input.
+  for (const deprecatedName of DEPRECATED_SKILL_NAMES) {
+    await rm(join(targetDir, basename(deprecatedName)), { recursive: true, force: true });
   }
 
-  for (const staleName of previouslyInstalled) {
-    if (!skillNames.includes(staleName)) {
-      await rm(join(targetDir, staleName), { recursive: true, force: true });
-    }
-  }
-
-  if (skillNames.length === 0) {
-    if (previouslyInstalled.length > 0) {
-      // Record the now-empty set so a later run (source restored) reconciles
-      // correctly instead of comparing against stale prior names forever.
-      await mkdir(targetDir, { recursive: true });
-      await writeFile(manifestPath, JSON.stringify([]));
-    }
-    return;
-  }
+  if (skillNames.length === 0) return;
 
   await mkdir(targetDir, { recursive: true });
 
@@ -97,8 +87,6 @@ export async function installSkillsTo(targetDir: string, sourceDir?: string): Pr
     await rm(dest, { recursive: true, force: true });
     await cp(join(skillsSourceDir, skillName), dest, { recursive: true });
   }
-
-  await writeFile(manifestPath, JSON.stringify(skillNames));
 
   console.log(`✓ Installed ${skillNames.length} skill(s) to ${targetDir}`);
 }
