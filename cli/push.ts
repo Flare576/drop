@@ -43,11 +43,12 @@ interface CliFlags {
   dropAuth?: string;
   apiBase?: string;
   input?: string;
+  install?: boolean;
 }
 
 function parseArgs(argv: string[]): CliFlags {
   const flags: CliFlags = {};
-  const table: Record<string, keyof CliFlags> = {
+  const table: Record<string, Exclude<keyof CliFlags, "install">> = {
     "--filename": "filename",
     "--username": "username",
     "--passphrase": "passphrase",
@@ -58,6 +59,17 @@ function parseArgs(argv: string[]): CliFlags {
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
+
+    // Checked before the value-consuming table below so a literal "--install"
+    // that arrived as ANOTHER flag's value (e.g. `--input --install`, pushing a
+    // file actually named "--install") is never re-interpreted as this flag —
+    // that token is already consumed by the table branch's `argv[++i]` before
+    // the loop ever reaches a fresh iteration on it.
+    if (arg === "--install") {
+      flags.install = true;
+      continue;
+    }
+
     const eq = arg.indexOf("=");
     const [flag, inlineValue] = eq !== -1 && arg.startsWith("--") ? [arg.slice(0, eq), arg.slice(eq + 1)] : [arg, undefined];
 
@@ -230,12 +242,13 @@ function formatDuration(totalSeconds: number): string {
 // ---------------------------------------------------------------------------------
 
 async function main(): Promise<void> {
-  if (process.argv.slice(2).includes("--install")) {
-    await runInstall();
-    process.exit(0);
+  const flags = parseArgs(process.argv.slice(2));
+
+  if (flags.install) {
+    const succeeded = await runInstall();
+    process.exit(succeeded ? 0 : 1);
   }
 
-  const flags = parseArgs(process.argv.slice(2));
   const config = await resolveConfig(flags);
   const credentials = requireCredentials(config);
 

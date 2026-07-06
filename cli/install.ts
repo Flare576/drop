@@ -1,7 +1,19 @@
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
-import { cp, mkdir, readdir, rm, stat } from "node:fs/promises";
+import { cp, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+
+/**
+ * Filename (not a skill name — never matches a real skill directory) recording
+ * which skill names THIS package installed into a given targetDir on a prior
+ * run. Shared skill-discovery directories (`~/.claude/skills/`, etc.) can hold
+ * other tools' skills too (e.g. `ei` installs into these exact same paths) —
+ * without this manifest, cleaning up a skill drop-f itself removed from a
+ * later version would have no safe way to distinguish "mine, now stale" from
+ * "not mine, leave alone." Only names ever recorded here by this function are
+ * ever candidates for removal.
+ */
+const MANIFEST_FILENAME = ".drop-f-skills.json";
 
 /**
  * Copy every skills/<name>/ directory from drop-f's own package into a
@@ -10,7 +22,9 @@ import { cp, mkdir, readdir, rm, stat } from "node:fs/promises";
  * silently on upgrade/uninstall, and Windows symlinks need elevated
  * permissions. Generic over whatever exists under skills/ — adding a new
  * drop-f-shipped skill later requires zero changes here. Overwrites
- * unconditionally on every run.
+ * unconditionally on every run, and removes any skill THIS function
+ * previously installed into targetDir that source no longer has (tracked via
+ * `MANIFEST_FILENAME`, never by diffing targetDir's full contents — see above).
  *
  * `sourceDir` defaults to drop-f's own packaged skills/ (resolved relative
  * to this file's own location, so it works regardless of install method —
@@ -29,21 +43,48 @@ export async function installSkillsTo(targetDir: string, sourceDir?: string): Pr
   // ships no `test` binary, so a shell-based check would silently treat
   // every Windows install as "source doesn't exist" and skip skill
   // installation with no warning at all.
+  let skillNames: string[] = [];
   try {
     const sourceStat = await stat(skillsSourceDir);
-    if (!sourceStat.isDirectory()) return;
+    if (sourceStat.isDirectory()) {
+      // fs.readdir + isDirectory() instead of `ls -d dir/*/` — skips stray
+      // files directly under skills/ (e.g. a top-level README.md) without
+      // depending on Bun Shell's undocumented `-d` flag support or POSIX
+      // glob semantics.
+      const entries = await readdir(skillsSourceDir, { withFileTypes: true });
+      skillNames = entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name);
+    }
   } catch {
     // From-source checkout or a package build that predates this feature —
-    // nothing to do yet, and that's not an error.
-    return;
+    // no skills to install, but still fall through to reconcile any stale
+    // manifest entries below (source having vanished entirely is the same
+    // "no longer present" signal as one skill within it disappearing).
   }
 
-  // fs.readdir + isDirectory() instead of `ls -d dir/*/` — skips stray files
-  // directly under skills/ (e.g. a top-level README.md) without depending on
-  // Bun Shell's undocumented `-d` flag support or POSIX glob semantics.
-  const entries = await readdir(skillsSourceDir, { withFileTypes: true });
-  const skillNames = entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name);
-  if (skillNames.length === 0) return;
+  const manifestPath = join(targetDir, MANIFEST_FILENAME);
+  let previouslyInstalled: string[] = [];
+  try {
+    previouslyInstalled = JSON.parse(await readFile(manifestPath, "utf8"));
+  } catch {
+    // No manifest yet — first run against this targetDir, or a targetDir
+    // that predates this manifest mechanism. Nothing to reconcile against.
+  }
+
+  for (const staleName of previouslyInstalled) {
+    if (!skillNames.includes(staleName)) {
+      await rm(join(targetDir, staleName), { recursive: true, force: true });
+    }
+  }
+
+  if (skillNames.length === 0) {
+    if (previouslyInstalled.length > 0) {
+      // Record the now-empty set so a later run (source restored) reconciles
+      // correctly instead of comparing against stale prior names forever.
+      await mkdir(targetDir, { recursive: true });
+      await writeFile(manifestPath, JSON.stringify([]));
+    }
+    return;
+  }
 
   await mkdir(targetDir, { recursive: true });
 
@@ -57,6 +98,8 @@ export async function installSkillsTo(targetDir: string, sourceDir?: string): Pr
     await cp(join(skillsSourceDir, skillName), dest, { recursive: true });
   }
 
+  await writeFile(manifestPath, JSON.stringify(skillNames));
+
   console.log(`✓ Installed ${skillNames.length} skill(s) to ${targetDir}`);
 }
 
@@ -69,12 +112,16 @@ function resolveHome(): string {
   return process.env.HOME || homedir();
 }
 
-async function runInstallStep(label: string, step: () => Promise<void>): Promise<void> {
+/** Returns true on success, false if `step` threw — caller decides what a
+ *  failure means for its own overall exit status. */
+async function runInstallStep(label: string, step: () => Promise<void>): Promise<boolean> {
   try {
     await step();
+    return true;
   } catch (e) {
     console.warn(`⚠️  ${label} install step failed: ${e instanceof Error ? e.message : String(e)}`);
     console.warn(`   Skipping — other integrations will still be attempted.`);
+    return false;
   }
 }
 
@@ -85,12 +132,15 @@ async function runInstallStep(label: string, step: () => Promise<void>): Promise
  * extension files to register — this is skill-file copying only, for the
  * three harnesses that have a native skill-markdown discovery convention.
  */
-export async function runInstall(): Promise<void> {
+export async function runInstall(): Promise<boolean> {
   const home = resolveHome();
+  let allAttemptedSucceeded = true;
 
   // Claude Code: unconditional attempt, no detection gate — ~/.claude/skills/
   // is harmless to create even if Claude Code isn't actually installed.
-  await runInstallStep("Claude Code", () => installSkillsTo(join(home, ".claude", "skills")));
+  if (!(await runInstallStep("Claude Code", () => installSkillsTo(join(home, ".claude", "skills"))))) {
+    allAttemptedSucceeded = false;
+  }
 
   const ompAgentDir = join(home, ".omp", "agent");
   const hasOmp =
@@ -100,7 +150,9 @@ export async function runInstall(): Promise<void> {
     (await Bun.file(join(ompAgentDir, "agent.db")).exists());
 
   if (hasOmp) {
-    await runInstallStep("OMP", () => installSkillsTo(join(ompAgentDir, "skills")));
+    if (!(await runInstallStep("OMP", () => installSkillsTo(join(ompAgentDir, "skills"))))) {
+      allAttemptedSucceeded = false;
+    }
   } else {
     console.log(`ℹ️  OMP not detected — skipping.`);
   }
@@ -112,8 +164,12 @@ export async function runInstall(): Promise<void> {
     (await Bun.file(join(opencodeDir, "opencode.db")).exists());
 
   if (hasOpenCode) {
-    await runInstallStep("OpenCode", () => installSkillsTo(join(opencodeDir, "skills")));
+    if (!(await runInstallStep("OpenCode", () => installSkillsTo(join(opencodeDir, "skills"))))) {
+      allAttemptedSucceeded = false;
+    }
   } else {
     console.log(`ℹ️  OpenCode not detected — skipping.`);
   }
+
+  return allAttemptedSucceeded;
 }
