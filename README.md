@@ -4,17 +4,25 @@ Zero-knowledge, client-side-encrypted dead-drop relay. Push an artifact — a gi
 or the raw bytes of any file — from one machine, pull and decrypt it on another — the
 relay never sees plaintext, the passphrase, or the derived key.
 
-## Installing the CLI
+## Running `drop-f`
 
 ```sh
-npm install -g drop-f   # or: bunx drop-f (no install, runs the latest published version each time)
+bunx drop-f
 ```
 
-`npm install -g drop-f` (or the local `bunx drop-f` form) installs **only the push
-side** — the `push.ts` CLI that encrypts and sends an artifact. It does not touch or
-require `api/`, `web/`, or any local server; those exist purely so *this repo's*
-maintainer can run/deploy the relay itself. Installing the CLI package elsewhere never
-pulls in the API or web code.
+There is nothing to install for the CLI itself — `bunx drop-f` fetches and runs
+`push.ts` directly, every time, always the latest published version. It's the
+**only** thing `push.ts` needs on a machine to work; it doesn't touch or require
+`api/`, `web/`, or any local server (those exist purely so *this repo's* maintainer
+can run/deploy the relay itself). This requires Bun on `PATH` — `push.ts` uses
+Bun-only APIs internally, not just a `.ts`-file convenience.
+
+(`npm install -g drop-f` also technically works, since npm just wires up a `drop-f`
+command pointing at the same file — its own `#!/usr/bin/env bun` shebang is what
+actually runs it, same as `bunx`. But it buys nothing here: no faster startup worth
+noticing, no offline story that matters for a tool whose whole job is talking to a
+live relay, and it freezes at whatever version you installed instead of always
+resolving latest. There's no reason to prefer it over `bunx drop-f`.)
 
 Before running it, three environment variables must be set — the CLI fails immediately
 with a named list of whatever's missing rather than attempting a partial push:
