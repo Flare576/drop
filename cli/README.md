@@ -2,10 +2,11 @@
 
 Standalone Bun CLI that encrypts a git working-tree diff and pushes it to the drop
 relay, so a coding harness running on unrestricted hardware can hand a diff to a
-locked-down client VDI's browser to pull down later. It is invoked by a shell
-command from a harness's hook config — it has **zero knowledge of which harness
-called it**. The only harness-specific work lives in the hook config, not in this
-file.
+locked-down client VDI's browser to pull down later. It has **zero knowledge of
+which harness invoked it** — a coding agent calls it directly (see
+`skills/drop-diff/SKILL.md`) when it decides a push is warranted, or a human runs it
+by hand. There is no automatic/background trigger; see
+`docs/adr/0003-skills-over-hooks.md` for why.
 
 ## Setup: credentials file
 
@@ -63,7 +64,7 @@ there is no silent partial attempt.
    actionable error for 403 (unrecognized team-gate code), 429 (rate limited, with a
    human-readable retry time), 400 (malformed body — a bug in this script, not your
    config), or a network failure — never a raw stack trace. Exit code is non-zero on
-   any failure, so a hook can branch on it.
+   any failure, so a calling script or agent can branch on it.
 
 ### On the git sequence specifically
 
@@ -106,116 +107,9 @@ See `skills/drop/SKILL.md` and `skills/drop-diff/SKILL.md` for the model-facing 
 of this doc — a coding agent invoking this on a user's behalf reads those, not this
 file, to decide when and how to call `push.ts`.
 
----
+## Filename labeling (optional)
 
-## Hook integration
-
-`push.ts` doesn't reimplement anything per-harness — every example below just shells
-out to it. Reasoning for *when* to fire it: a push should happen once per meaningful
-chunk of agent work, not on every tool call, so both integrations below use each
-harness's end-of-turn/end-of-response event rather than a per-tool-call event.
-
-### OpenCode / OhMyPi
-
-OhMyPi hook modules live at `.omp/hooks/*.ts` and default-export a factory
-`(pi: HookAPI) => void` that registers handlers via `pi.on(event, handler)` and
-shells out via `pi.exec(...)`. The relevant event surface (per `omp://hooks.md`)
-includes `agent_end` (agent/session finished) and `turn_end` (one model turn
-finished). `agent_end` is the better fit here — it fires once when the whole agent
-run concludes, matching "one push per meaningful chunk of work," where `turn_end`
-would fire on every individual model turn inside a longer agent loop and could push
-far more often than intended.
-
-`.omp/hooks/push-to-drop.ts`:
-
-```ts
-import type { HookAPI } from "@oh-my-pi/pi-coding-agent/extensibility/hooks";
-
-export default function hook(pi: HookAPI): void {
-  pi.on("agent_end", async (_event, ctx) => {
-    const result = await pi.exec("bun run cli/push.ts", { cwd: ctx.cwd });
-
-    if (result.exitCode !== 0) {
-      ctx.ui.setStatus("push-to-drop", `push failed: ${result.stderr?.trim() || "unknown error"}`);
-    }
-  });
-}
-```
-
-(Adjust the `pi.exec` call signature/return shape to whatever your installed OMP
-version's `HookContext` actually exposes — the shape above follows the documented
-`pi.on(event, handler)` / `ctx.ui.setStatus` surface from `omp://hooks.md`; verify
-against your local `HookAPI` type before relying on `result.exitCode`/`stderr`
-field names.)
-
-Where the env vars live: same as any other machine secret on this box — a local,
-untracked env file such as `~/.doNotCommit.d/.doNotCommit.droprelay` (see above),
-sourced by your shell profile or just left for `push.ts` to read directly. Nothing
-OMP-specific is needed here since `push.ts` resolves its own config.
-
-### Claude Code
-
-Claude Code hooks are configured in a `settings.json` (`~/.claude/settings.json` for
-all projects, or `.claude/settings.json` for one project) under a top-level `hooks`
-key mapping an event name to matcher groups, each with one or more hook handlers.
-**Verified against the current official Claude Code hooks reference
-(`code.claude.com/docs/en/hooks`, fetched during this task) — not a guess.**
-
-The relevant event is `Stop`: it fires once when the main agent finishes responding
-for a turn (not on interrupts, not on every tool call), which is the closest
-equivalent to OMP's `agent_end`/`turn_end` cadence for "push once per meaningful
-chunk of work." `Stop` doesn't support a `matcher` field (it always fires), and a
-command hook receives the event as JSON on stdin — `push.ts` doesn't need any of
-that JSON, so the example below ignores stdin entirely.
-
-`.claude/settings.json`:
-
-```json
-{
-  "hooks": {
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bun run cli/push.ts",
-            "args": []
-          }
-        ]
-      }
-    ]
-  }
-}
-```
-
-Notes on this config, confirmed from the current docs:
-
-- `args: []` (exec form) is used deliberately over shell form so no shell quoting
-  is involved; `command` is resolved as an executable on `PATH`. Bun must be on
-  `PATH` for the process Claude Code spawns.
-- Exit code 2 from a `Stop` hook prevents Claude from stopping and continues the
-  conversation — `push.ts` never exits 2, only 0 or 1, so it can never accidentally
-  trap Claude Code in a stop loop; a push failure is just reported to the transcript
-  as a non-blocking hook error (any non-zero, non-2 exit code) and the turn still
-  ends normally.
-- If you'd rather fire it once per subagent instead of once per top-level turn, the
-  same handler shape applies under `SubagentStop`. `PostToolUse` (after every tool
-  call) was intentionally not used here — it fires far more often than "once per
-  meaningful chunk of work" and would spam pushes.
-
-Where the env vars live: identical story to the OMP integration above — a local,
-untracked env file (e.g. `~/.doNotCommit.d/.doNotCommit.droprelay`) that `push.ts`
-reads itself. `settings.json` needs no secrets in it at all, so this file is safe to
-commit to the repo if you want the hook wiring shared with a team, as long as no one
-puts real credentials directly in `settings.json`.
-
-### Harness-agnostic by construction
-
-`push.ts` itself never branches on which harness invoked it. There is no
-`--harness` flag; if you want a harness label visible in the pulled patch's
-filename (purely cosmetic — the relay never reads or indexes it, since `filename`
-lives inside the encrypted blob), pass one via `--filename`, e.g.
-`--filename "omp-$(date -u +%Y-%m-%dT%H-%M-%SZ).patch"` in shell form (drop
-`args: []`/use a plain `command` string so the shell expands `$(date ...)`).
-Swap either hook config for a different one (a plain cron job, a git pre-push
-hook, a manual terminal alias) and `push.ts` runs identically.
+`push.ts` never branches on who or what invoked it — there's no `--harness` flag. If
+you want a label visible in the pulled patch's filename (purely cosmetic; the relay
+never reads or indexes it, since `filename` lives inside the encrypted blob), pass one
+via `--filename`, e.g. `--filename "manual-$(date -u +%Y-%m-%dT%H-%M-%SZ).patch"`.

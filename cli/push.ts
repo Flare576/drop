@@ -4,9 +4,10 @@
  *
  * Harness-agnostic: this file has zero knowledge of which coding harness (OhMyPi,
  * Claude Code, or a bare terminal) invoked it. It only cares about the git repo it
- * runs in and the four DROP_* config values. Wiring a harness's hook config to shell
- * out to `bun run cli/push.ts` is the entirety of the per-harness integration work —
- * see cli/README.md.
+ * runs in and the four DROP_* config values. A coding agent invokes this directly —
+ * see skills/drop-diff/SKILL.md — when it decides a push is warranted, or when the
+ * user asks; there is no automatic trigger. See cli/README.md and
+ * docs/adr/0003-skills-over-hooks.md.
  *
  * Usage:
  *   bun run cli/push.ts [--filename <name>] [--username <u>] [--passphrase <p>]
