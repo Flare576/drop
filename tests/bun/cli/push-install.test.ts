@@ -47,6 +47,11 @@ async function pathExists(path: string): Promise<boolean> {
     return false;
   }
 }
+async function repoSkillNames(): Promise<string[]> {
+  const skillEntries = await readdir(REPO_SKILLS_DIR, { withFileTypes: true });
+  return skillEntries.filter((entry) => entry.isDirectory()).map((entry) => entry.name);
+}
+
 
 describe("push.ts --install", () => {
   it("installs skills into every detected harness under a scratch HOME, skips undetected ones, and never touches the network", async () => {
@@ -64,8 +69,7 @@ describe("push.ts --install", () => {
       expect(captureServer.requests).toHaveLength(0);
 
       // Discovered at test-run time so this doesn't rot if a skill is renamed or added later.
-      const skillEntries = await readdir(REPO_SKILLS_DIR, { withFileTypes: true });
-      const skillNames = skillEntries.filter((entry) => entry.isDirectory()).map((entry) => entry.name);
+      const skillNames = await repoSkillNames();
       expect(skillNames.length).toBeGreaterThan(0);
 
       for (const skillName of skillNames) {
@@ -76,6 +80,66 @@ describe("push.ts --install", () => {
       // No OpenCode marker file existed, so its skills dir must never be created.
       expect(await pathExists(join(scratchHome.dir, ".config", "opencode", "skills"))).toBe(false);
     } finally {
+      await captureServer.stop();
+      await scratchHome.destroy();
+    }
+  });
+
+  it("installs Claude Code and OpenCode skills when only OpenCode is detected, skips OMP, and never touches the network", async () => {
+    const scratchHome = await TempRepo.create("drop-push-install-opencode-");
+    const captureServer = await startCaptureServer();
+
+    try {
+      // Exactly one OpenCode marker present — no OMP markers. Claude Code is
+      // unconditional and gets no marker at all.
+      await scratchHome.write(".config/opencode/opencode.json", "{}\n");
+
+      const result = await runInstall(scratchHome.dir, captureServer.baseUrl);
+
+      expect(result.exitCode).toBe(0);
+      expect(captureServer.requests).toHaveLength(0);
+
+      const skillNames = await repoSkillNames();
+      expect(skillNames.length).toBeGreaterThan(0);
+
+      for (const skillName of skillNames) {
+        expect(await pathExists(join(scratchHome.dir, ".claude", "skills", skillName, "SKILL.md"))).toBe(true);
+        expect(await pathExists(join(scratchHome.dir, ".config", "opencode", "skills", skillName, "SKILL.md"))).toBe(true);
+      }
+
+      expect(await pathExists(join(scratchHome.dir, ".omp", "agent", "skills"))).toBe(false);
+    } finally {
+      await captureServer.stop();
+      await scratchHome.destroy();
+    }
+  });
+
+  it("exits non-zero when OMP install fails after Claude Code succeeds, while still avoiding the network", async () => {
+    const scratchHome = await TempRepo.create("drop-push-install-omp-fail-");
+    const captureServer = await startCaptureServer();
+    const ompAgentDir = join(scratchHome.dir, ".omp", "agent");
+
+    try {
+      await scratchHome.write(".omp/agent/settings.json", "{}\n");
+      await chmod(ompAgentDir, 0o500);
+
+      const result = await runInstall(scratchHome.dir, captureServer.baseUrl);
+
+      expect(result.exitCode).toBe(1);
+      expect(result.stdout).toContain(join(scratchHome.dir, ".claude", "skills"));
+      expect(result.stderr).toContain("OMP");
+      expect(captureServer.requests).toHaveLength(0);
+
+      const skillNames = await repoSkillNames();
+      expect(skillNames.length).toBeGreaterThan(0);
+
+      for (const skillName of skillNames) {
+        expect(await pathExists(join(scratchHome.dir, ".claude", "skills", skillName, "SKILL.md"))).toBe(true);
+      }
+
+      expect(await pathExists(join(ompAgentDir, "skills"))).toBe(false);
+    } finally {
+      await chmod(ompAgentDir, 0o700);
       await captureServer.stop();
       await scratchHome.destroy();
     }
