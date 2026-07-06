@@ -1,5 +1,5 @@
 {
-  "name": "f-drop",
+  "name": "drop-f",
   "version": "0.0.1",
   "author": "Flare576",
   "repository": {
@@ -17,7 +17,7 @@
     "LICENSE"
   ],
   "bin": {
-    "f-drop": "./cli/push.ts"
+    "drop-f": "./cli/push.ts"
   },
   "description": "Zero-knowledge encrypted dead-drop relay: push a git diff from one machine, pull and decrypt it on another, without the relay ever seeing plaintext.",
   "keywords": [
