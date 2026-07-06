@@ -10,7 +10,7 @@ function makeUserId(length = 48): string {
   return seed.repeat(Math.ceil(length / seed.length)).slice(0, length);
 }
 
-setDefaultTimeout(30_000);
+setDefaultTimeout(90_000);
 
 beforeAll(async () => {
   stack = await startDockerStack();

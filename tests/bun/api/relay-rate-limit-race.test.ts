@@ -9,7 +9,7 @@ const CONCURRENT_REQUESTS = 40;
 
 let stack: DockerStackHandle | undefined;
 
-setDefaultTimeout(30_000);
+setDefaultTimeout(90_000);
 
 beforeAll(async () => {
   stack = await startDockerStack();

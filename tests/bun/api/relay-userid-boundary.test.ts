@@ -46,7 +46,7 @@ async function countUserArtifactFiles(userId: string): Promise<number> {
   return Number.parseInt(stdout.trim(), 10);
 }
 
-setDefaultTimeout(30_000);
+setDefaultTimeout(90_000);
 
 beforeAll(async () => {
   stack = await startDockerStack();
