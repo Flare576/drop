@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import { encrypt } from "../../shared/crypto.ts";
-import { PRIMARY_CREDENTIALS, SAMPLE_ENVELOPE } from "../bun/helpers/fixtures.ts";
+import { PRIMARY_CREDENTIALS, SAMPLE_ENVELOPE_PLAINTEXT } from "../bun/helpers/fixtures.ts";
 
 const API_BASE = "http://relay.test/drop/api";
 const DELETE_ERROR = "Relay refused delete. Artifact still present.";
@@ -30,7 +30,7 @@ async function signIn(page: Page) {
 }
 
 test("surfaces the relay error when delete fails after a successful download instead of claiming the artifact was removed", async ({ page }) => {
-  const encryptedArtifact = await encrypt(JSON.stringify(SAMPLE_ENVELOPE), PRIMARY_CREDENTIALS);
+  const encryptedArtifact = await encrypt(SAMPLE_ENVELOPE_PLAINTEXT, PRIMARY_CREDENTIALS);
 
   await page.route(`${API_BASE}/**`, async (route) => {
     const request = route.request();
