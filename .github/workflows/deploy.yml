@@ -78,6 +78,7 @@ jobs:
           done
 
   build-and-deploy:
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     needs: test
     runs-on: ubuntu-latest
     environment: Prod
