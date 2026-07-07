@@ -30,7 +30,7 @@ import { generateUserId, encrypt, type CryptoCredentials } from "../shared/crypt
 import { runInstall } from "./install.ts";
 
 const CONFIG_FILE = join(homedir(), ".doNotCommit.d", ".doNotCommit.droprelay");
-const DEFAULT_API_BASE = "https://flare576.com/drop/api";
+const DEFAULT_API_BASE = "https://drop.flare576.com/api";
 
 // ---------------------------------------------------------------------------------
 // CLI argument parsing

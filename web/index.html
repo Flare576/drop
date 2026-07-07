@@ -6,7 +6,7 @@
   <title>Drop Relay</title>
   <link rel="stylesheet" href="style.css">
   <script>
-    // Local-testing override: index.html?apiBase=http://localhost:8081/drop/api
+    // Local-testing override: index.html?apiBase=http://localhost:8081/api
     // Restricted to localhost/127.0.0.1 ONLY -- see web/README.md "Configuring the API
     // base". A production page (any other hostname) always uses the hardcoded relay,
     // no matter what ?apiBase= says: an unrestricted override would let a crafted link
@@ -14,7 +14,7 @@
     // attacker-controlled host (Beta QA finding I1).
     const isLocalDev = ['localhost', '127.0.0.1'].includes(location.hostname);
     const requestedApiBase = new URLSearchParams(location.search).get('apiBase');
-    window.DROP_API_BASE = (isLocalDev && requestedApiBase) || 'https://flare576.com/drop/api';
+    window.DROP_API_BASE = (isLocalDev && requestedApiBase) || 'https://drop.flare576.com/api';
   </script>
 </head>
 <body>
