@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 import { PRIMARY_CREDENTIALS } from "../bun/helpers/fixtures.ts";
 
-const API_BASE = "http://relay.test/drop/api";
+const API_BASE = "http://relay.test/api";
 
 const corsHeaders = {
   "access-control-allow-origin": "*",

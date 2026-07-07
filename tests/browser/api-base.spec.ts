@@ -2,9 +2,9 @@ import { expect, test, type Page } from "@playwright/test";
 
 import { PRIMARY_CREDENTIALS } from "../bun/helpers/fixtures.ts";
 
-const LOCAL_OVERRIDE_BASE = "http://relay.test/drop/api";
-const HOSTILE_OVERRIDE_BASE = "http://evil.test/drop/api";
-const PRODUCTION_BASE = "https://flare576.com/drop/api";
+const LOCAL_OVERRIDE_BASE = "http://relay.test/api";
+const HOSTILE_OVERRIDE_BASE = "http://evil.test/api";
+const PRODUCTION_BASE = "https://drop.flare576.com/api";
 
 const corsHeaders = {
   "access-control-allow-origin": "*",
