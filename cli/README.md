@@ -27,8 +27,8 @@ the same file can be sourced by a shell profile if you want:
 export DROP_USERNAME=your-username
 export DROP_PASSPHRASE="a long random passphrase, not a real password"
 export DROP_AUTH=team-shared-code-word
-# optional — defaults to https://flare576.com/drop/api if omitted
-export DROP_API_BASE=https://flare576.com/drop/api
+# optional — defaults to https://drop.flare576.com/api if omitted
+export DROP_API_BASE=https://drop.flare576.com/api
 ```
 
 `DROP_USERNAME`/`DROP_PASSPHRASE` derive the AES-GCM key and the opaque userId (via

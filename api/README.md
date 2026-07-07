@@ -88,8 +88,9 @@ a cron job. Expiry is therefore fully self-healing from ordinary HTTP traffic in
 
 ## Base path
 
-The literal string `/drop/api/` is hardcoded in `index.php` rather than derived from
+The literal string `/api/` is hardcoded in `index.php` rather than derived from
 `$_SERVER['SCRIPT_NAME']`/`PATH_INFO`. This is intentional, not a shortcut: a prior sibling
 app on this same host went through repeated churn trying to make its base path
 "self-discovering" across different Apache rewrite configurations. Don't refactor this to
-be dynamic — if the deploy path ever changes, update the constant.
+be dynamic — if the deploy path ever changes, update the constant. Production is reachable
+at `https://drop.flare576.com/api`.

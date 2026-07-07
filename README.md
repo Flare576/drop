@@ -65,7 +65,7 @@ vroom -r   # bring up the api + db containers (waits for both healthchecks)
 vroom -d   # tear down containers, volume, and generated config — leaves no trace
 ```
 
-Once running, the relay answers on `http://localhost:8080/drop/api/{userId}` exactly
+Once running, the relay answers on `http://localhost:8080/api/{userId}` exactly
 like production (same router dispatch, same auth gates). A dev-only team-gate code,
 `dev-local-only`, is seeded automatically for local `X-Drop-Auth` testing — it only
 ever exists inside the throwaway container, never touches the real database.

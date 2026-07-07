@@ -38,21 +38,21 @@ mailbox IDs for the same credentials and nothing will ever show up in the list.
 ## Configuring the API base
 
 `index.html` sets `window.DROP_API_BASE` before `app.js` loads, defaulting to the production
-relay (`https://flare576.com/drop/api`). It can be overridden per-page-load via a query
+relay (`https://drop.flare576.com/api`). It can be overridden per-page-load via a query
 string, but **only when the page itself is served from `localhost`/`127.0.0.1`**:
 
 ```
-http://localhost:8080/?apiBase=http://localhost:8081/drop/api
+http://localhost:8080/?apiBase=http://localhost:8081/api
 ```
 
 The override is intentionally restricted to local dev hosts, not "any URL is fine because
 it's not a secret." `userId` in the URL path is this app's bearer credential for list/read/
 delete (see api/README.md) — an unrestricted override would let a crafted link
-(`https://flare576.com/?apiBase=https://attacker.example/drop/api`) silently redirect that
+(`https://drop.flare576.com/?apiBase=https://attacker.example/drop/api`) silently redirect that
 credential to an attacker-controlled host on page load, before the user does anything (Beta
 QA finding I1). Restricting the override to `localhost`/`127.0.0.1` keeps the convenience for
 local testing while making it structurally impossible for a link to exploit this against the
-real production page, whose hostname is always `flare576.com`.
+real production page, whose hostname is always `drop.flare576.com`.
 
 ## Local testing
 
@@ -66,20 +66,20 @@ python3 -m http.server 8080
 # open http://localhost:8080/
 ```
 
-By default the page will hit the **production** API (`https://flare576.com/drop/api`), which
+By default the page will hit the **production** API (`https://drop.flare576.com/api`), which
 is safe to use for testing — CORS is wildcard-open there and you're only ever pushing/pulling
 your own encrypted mailbox. Requires a real push (e.g. via `cli/`) to have something to list.
 
 To test against a local copy of `api/` instead (needs its own MySQL DB + `api/config.php`
 generated from `api/config.php.template` — see `api/README.md`), run it with PHP's built-in
 server from the repo root, routing every request through `index.php` (it hardcodes
-`/drop/api/` as its expected base path, so the router and the `apiBase` query param both
+`/api/` as its expected base path, so the router and the `apiBase` query param both
 need that prefix):
 
 ```sh
 cd api
 php -S localhost:8081 index.php
-# then open http://localhost:8080/?apiBase=http://localhost:8081/drop/api
+# then open http://localhost:8080/?apiBase=http://localhost:8081/api
 ```
 
 ### What was verified while building this
