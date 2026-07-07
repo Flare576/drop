@@ -1,5 +1,5 @@
 RewriteEngine On
-RewriteBase /drop/api/
+RewriteBase /api/
 
 # Directory listing is not needed and leaks storage layout
 Options -Indexes

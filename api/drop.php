@@ -217,7 +217,7 @@ function reserveRateLimitSlotOnce(PDO $pdo, string $userId): array
 // ---------------------------------------------------------------------------------------
 
 /**
- * POST /drop/api/{userId} - enqueue one encrypted artifact.
+ * POST /api/{userId} - enqueue one encrypted artifact.
  * Requires a valid X-Drop-Auth header (a shared team-gate code, checked against the
  * allowed_auth table -- not the encryption passphrase, not a per-user secret). Body must
  * be exactly {"iv": "<base64>", "ciphertext": "<base64>"}.
@@ -304,7 +304,7 @@ function handlePost(string $userId): void
 }
 
 /**
- * GET /drop/api/{userId} - list pending (non-expired) artifacts, metadata only.
+ * GET /api/{userId} - list pending (non-expired) artifacts, metadata only.
  */
 function handleGetList(string $userId): void
 {
@@ -337,7 +337,7 @@ function handleGetList(string $userId): void
 }
 
 /**
- * GET /drop/api/{userId}/{artifactId} - fetch one artifact's full encrypted blob.
+ * GET /api/{userId}/{artifactId} - fetch one artifact's full encrypted blob.
  */
 function handleGetOne(string $userId, string $artifactId): void
 {
@@ -384,7 +384,7 @@ function handleGetOne(string $userId, string $artifactId): void
 }
 
 /**
- * DELETE /drop/api/{userId}/{artifactId} - mark consumed: hard delete row + blob file.
+ * DELETE /api/{userId}/{artifactId} - mark consumed: hard delete row + blob file.
  * Idempotent — deleting an already-gone artifact still returns 204.
  */
 function handleDelete(string $userId, string $artifactId): void
@@ -409,7 +409,7 @@ function handleDelete(string $userId, string $artifactId): void
 }
 
 /**
- * HEAD /drop/api/{userId} - cheap pending-count poll: same lookup as the list route, but
+ * HEAD /api/{userId} - cheap pending-count poll: same lookup as the list route, but
  * headers-only (no body) so a harness/UI can poll frequently without pulling metadata JSON.
  */
 function handleHead(string $userId): void

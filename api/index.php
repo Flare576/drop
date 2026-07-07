@@ -9,11 +9,11 @@ declare(strict_types=1);
  * opaque {iv, ciphertext} blobs. See api/README.md for the full security model.
  *
  * Endpoints (base path is hardcoded, NOT dynamically discovered — see README for why):
- *   POST   /drop/api/{userId}               - enqueue one encrypted artifact
- *   GET    /drop/api/{userId}                - list pending artifacts (metadata only)
- *   GET    /drop/api/{userId}/{artifactId}   - fetch one artifact's encrypted blob
- *   DELETE /drop/api/{userId}/{artifactId}   - mark an artifact consumed (hard delete)
- *   HEAD   /drop/api/{userId}                - cheap pending-count poll
+ *   POST   /api/{userId}               - enqueue one encrypted artifact
+ *   GET    /api/{userId}                - list pending artifacts (metadata only)
+ *   GET    /api/{userId}/{artifactId}   - fetch one artifact's encrypted blob
+ *   DELETE /api/{userId}/{artifactId}   - mark an artifact consumed (hard delete)
+ *   HEAD   /api/{userId}                - cheap pending-count poll
  *   OPTIONS *                                - CORS preflight only
  */
 
@@ -64,7 +64,7 @@ header('Content-Type: application/json');
 
 // Base path is intentionally hardcoded, not derived from SCRIPT_NAME/PATH_INFO — a prior
 // sibling app on this host churned repeatedly trying to make this "self-discovering".
-const DROP_BASE_PATH = '/drop/api/';
+const DROP_BASE_PATH = '/api/';
 
 $requestPath = parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH) ?? '';
 
