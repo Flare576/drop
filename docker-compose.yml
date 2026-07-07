@@ -44,7 +44,7 @@ services:
       PHP_CLI_SERVER_WORKERS: "8"
     command: php -S 0.0.0.0:8080 -t /app/api /app/docker/dev-router.php
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/drop/api/probe-user"]
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/api/probe-user"]
       interval: 2s
       timeout: 5s
       retries: 30

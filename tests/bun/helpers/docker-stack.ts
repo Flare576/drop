@@ -7,7 +7,7 @@ export interface DockerStackHandle {
 }
 
 const REPO_ROOT = resolve(import.meta.dir, "../../..");
-const RELAY_BASE_URL = "http://localhost:8080/drop/api";
+const RELAY_BASE_URL = "http://localhost:8080/api";
 
 export async function startDockerStack(): Promise<DockerStackHandle> {
   await Bun.$`vroom -s`.cwd(REPO_ROOT).quiet();

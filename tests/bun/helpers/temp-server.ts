@@ -46,7 +46,7 @@ export async function startCaptureServer(options: CaptureServerOptions = {}): Pr
   });
 
   return {
-    baseUrl: `http://127.0.0.1:${server.port}/drop/api`,
+    baseUrl: `http://127.0.0.1:${server.port}/api`,
     requests,
     async stop(): Promise<void> {
       server.stop(true);
