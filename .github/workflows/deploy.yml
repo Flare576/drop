@@ -100,7 +100,7 @@ jobs:
       # scripts/render-config.php for the escaping rationale.
       - name: Generate API config
         env:
-          DB_HOSTNAME: ${{ secrets.DB_HOST }}
+          DB_HOSTNAME: ${{ secrets.DB_HOSTNAME }}
           DB_DATABASE: ${{ secrets.DB_DATABASE }}
           DB_USERNAME: ${{ secrets.DB_USERNAME }}
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}

@@ -56,7 +56,11 @@ function escapeForPhpSingleQuotedLiteral(string $value): string
 
 foreach ($requiredTokens as $token) {
     $value = getenv($token);
-    if ($value === false) {
+    // GitHub Actions renders a nonexistent-secret reference as an empty string, not an
+    // absent env var -- a bare `=== false` check here would let a typo'd secret name
+    // (e.g. `secrets.DB_HOST` when the real secret is `DB_HOSTNAME`) sail through as a
+    // silently-blank required config value instead of failing the deploy loudly.
+    if ($value === false || $value === '') {
         fwrite(STDERR, "missing required environment variable: {$token}\n");
         exit(1);
     }
