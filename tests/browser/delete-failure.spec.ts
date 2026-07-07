@@ -4,7 +4,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { encrypt } from "../../shared/crypto.ts";
 import { PRIMARY_CREDENTIALS, SAMPLE_CONTENT, SAMPLE_ENVELOPE_PLAINTEXT, SAMPLE_FILENAME } from "../bun/helpers/fixtures.ts";
 
-const API_BASE = "http://relay.test/drop/api";
+const API_BASE = "http://relay.test/api";
 const DELETE_ERROR = "Relay refused delete. Artifact still present.";
 
 const corsHeaders = {
@@ -51,7 +51,7 @@ test("downloads the decrypted artifact bytes, deletes the relay copy, and refres
       return;
     }
 
-    if (request.method() === "GET" && segments.length === 3) {
+    if (request.method() === "GET" && segments.length === 2) {
       await route.fulfill(
         jsonResponse({
           items: deleted
@@ -68,12 +68,12 @@ test("downloads the decrypted artifact bytes, deletes the relay copy, and refres
       return;
     }
 
-    if (request.method() === "GET" && segments.length === 4) {
+    if (request.method() === "GET" && segments.length === 3) {
       await route.fulfill(jsonResponse(encryptedArtifact));
       return;
     }
 
-    if (request.method() === "DELETE" && segments.length === 4) {
+    if (request.method() === "DELETE" && segments.length === 3) {
       deleted = true;
       await route.fulfill({ status: 204, headers: corsHeaders });
       return;
@@ -117,7 +117,7 @@ test("surfaces the relay error when delete fails after a successful download ins
       return;
     }
 
-    if (request.method() === "GET" && segments.length === 3) {
+    if (request.method() === "GET" && segments.length === 2) {
       await route.fulfill(
         jsonResponse({
           items: [
@@ -132,12 +132,12 @@ test("surfaces the relay error when delete fails after a successful download ins
       return;
     }
 
-    if (request.method() === "GET" && segments.length === 4) {
+    if (request.method() === "GET" && segments.length === 3) {
       await route.fulfill(jsonResponse(encryptedArtifact));
       return;
     }
 
-    if (request.method() === "DELETE" && segments.length === 4) {
+    if (request.method() === "DELETE" && segments.length === 3) {
       await route.fulfill(jsonResponse({ error: DELETE_ERROR }, 500));
       return;
     }
