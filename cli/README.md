@@ -100,18 +100,24 @@ simultaneous staged + unstaged + untracked changes: identical hash both times.
 
 ## Running it
 
-Three equivalent ways to invoke this, in order of "least setup required":
+Two ways to invoke this — pick based on whether you're a consumer of the published
+package or hacking on `push.ts` itself:
 
 ```sh
-bunx drop-f                # once published to npm — no local clone needed at all
-bun run drop/cli/push.ts   # curl'd down standalone (see skills/drop-diff/SKILL.md)
-bun run cli/push.ts        # from inside this repo
+bunx drop-f          # published to npm — no local clone, always latest (the norm)
+bun run cli/push.ts  # from inside a clone of this repo — dev loop only, to exercise
+                      # unreleased changes to push.ts before they're published
 ```
 
-All three run the exact same script — `bunx drop-f` resolves to `cli/push.ts` via the
+Both run the exact same script — `bunx drop-f` resolves to `cli/push.ts` via the
 `bin` field in `package.json`. Requires Bun either way (imports `../shared/crypto.ts`
 directly — no build step, per the project's `shared/crypto.ts` being written to run
-unmodified under Bun).
+unmodified under Bun). There is deliberately no third "curl the files down standalone"
+mode: `push.ts`'s module graph (currently `../shared/crypto.ts` + `./install.ts`) is an
+implementation detail that can change shape at any time, and enumerating exactly which
+files it needs in a doc is a maintenance trap that silently breaks the moment it drifts
+from source — `bunx drop-f` sidesteps this entirely by fetching the real package, every
+file it needs, every time.
 
 See `skills/drop/SKILL.md` and `skills/drop-diff/SKILL.md` for the model-facing version
 of this doc — a coding agent invoking this on a user's behalf reads those, not this
