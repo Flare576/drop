@@ -25,36 +25,23 @@ setting them (e.g. in `~/.doNotCommit.d/.doNotCommit.droprelay` or their shell p
 whatever this environment already uses for secrets) rather than trying to work around
 the failure.
 
-## Getting `push.ts`
-
-No install step, no package manager required. Two files, same relative layout, is all
-this needs:
-
-```sh
-mkdir -p drop/cli drop/shared
-curl -fsSL https://raw.githubusercontent.com/Flare576/drop/main/cli/push.ts -o drop/cli/push.ts
-curl -fsSL https://raw.githubusercontent.com/Flare576/drop/main/shared/crypto.ts -o drop/shared/crypto.ts
-```
-
-(`push.ts` imports `../shared/crypto.ts` by relative path — both files must land in this
-same relative arrangement, wherever you put the `drop/` folder.)
-
-If the repo is already cloned locally (e.g. this skill is running from inside the
-`drop` project itself), skip the `curl` step and just use `cli/push.ts` directly.
-
-Alternatively, if `drop-f` has been published to npm, `bunx drop-f` runs the exact same
-script without a local copy at all — check whether that's available before falling back
-to `curl`.
-
 ## Running it
 
-From inside the git repo whose changes should be sent:
+No local setup, no files to fetch — `bunx drop-f` pulls and runs the current
+published `push.ts` directly, every time, from inside the git repo whose changes
+should be sent:
 
 ```sh
-bun run drop/cli/push.ts
+bunx drop-f
 ```
 
-(or `bunx drop-f`, or `bun run cli/push.ts` if working inside the `drop` repo itself.)
+This is the **only** invocation this skill uses — there is no curl/clone/copy
+fallback. `push.ts` needs Bun specifically (Bun-only APIs, not just
+TypeScript-without-a-build-step), and this tool's whole premise is running on
+hardware that can freely reach the internet (see `skill://drop`'s "When to use
+this") — so "npm/bunx unreachable" isn't a real constraint to design around here.
+See the root `README.md`'s "Running drop-f" section for the fuller rationale
+(including why a curl'd-down or globally-installed copy buys nothing over this).
 
 ## What happens
 

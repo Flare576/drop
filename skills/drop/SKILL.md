@@ -55,8 +55,10 @@ behavior.
 
 ## What you do NOT need to do
 
-- You do not need to install anything system-wide, run an installer, or configure a
-  package manager. `drop`'s pieces are plain files — copy or `curl` down what you need
-  (see `drop-diff` for the exact files a git-diff push requires).
+- You do not need to clone the repo, install anything system-wide, run an
+  installer, or manage local copies of any file. `bunx drop-f` fetches and runs
+  the current published `push.ts` in one step, every time — see `skill://drop-diff`
+  or `skill://drop-file` for the exact invocation. There is no curl/clone/copy
+  fallback to reach for; don't invent one.
 - You do not need to reimplement the encryption. It's a single self-contained script;
   invoke it, don't rewrite it.
