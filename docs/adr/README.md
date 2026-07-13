@@ -16,3 +16,4 @@ Consequences. Not a full MADR template; this is a personal-scale project.
 9. [Docker for local PHP tooling, not a host install](0009-docker-for-local-php.md)
 10. [Byte-native envelope, generalized artifact shape, `--install`](0010-byte-native-envelope-and-input-flow.md)
 11. [Static deprecated-skill list, never dynamic diffing, for install cleanup](0011-static-deprecated-skill-list.md)
+12. [Single invocation mechanism: `bunx drop-f`, no curl'd-down standalone mode](0012-single-invocation-mechanism.md)
